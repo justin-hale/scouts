@@ -6,9 +6,8 @@ compatibility_date = "2025-01-01"
 [vars]
 GIST_ID = "44cd99dc175d3f87abfffa47aea6f850"
 GIST_FILENAME = "calendar.json"
-# Lock this to your GitHub Pages origin in production, e.g.
-# "https://yourname.github.io". Use "*" only while testing.
-ALLOWED_ORIGIN = "https://justin-hale.github.io/scouts/"
+# Comma-separated allowlist of origins permitted to call this Worker.
+ALLOWED_ORIGIN = "https://bolivarscouts.com,https://www.bolivarscouts.com"
 
 # Secrets are NOT set here. Set them with wrangler so they stay encrypted:
 #   npx wrangler secret put GITHUB_TOKEN

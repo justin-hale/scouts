@@ -15,19 +15,34 @@
 
 const GITHUB_API = "https://api.github.com";
 
-function corsHeaders(env) {
+// ALLOWED_ORIGIN may be "*" or a comma-separated allowlist of origins. When it
+// is an allowlist we echo back the caller's Origin if it matches.
+function corsHeaders(request, env) {
+  const allowed = (env.ALLOWED_ORIGIN || "*")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let allow = "*";
+  if (!allowed.includes("*")) {
+    const origin = request.headers.get("Origin");
+    allow = origin && allowed.includes(origin) ? origin : allowed[0];
+  }
   return {
-    "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
+    "Access-Control-Allow-Origin": allow,
+    Vary: "Origin",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   };
 }
 
-function json(body, status, env) {
+function json(body, status, request, env) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", ...corsHeaders(env) },
+    headers: {
+      "content-type": "application/json",
+      ...corsHeaders(request, env),
+    },
   });
 }
 
@@ -84,37 +99,37 @@ async function writeGist(env, data) {
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(env) });
+      return new Response(null, { headers: corsHeaders(request, env) });
     }
 
     const url = new URL(request.url);
 
     try {
       if (request.method === "GET") {
-        return json(await readGist(env), 200, env);
+        return json(await readGist(env), 200, request, env);
       }
 
       if (request.method === "POST") {
         const body = await request.json().catch(() => ({}));
 
         if (!safeEqual(body.password, env.ADMIN_PASSWORD)) {
-          return json({ error: "Unauthorized" }, 401, env);
+          return json({ error: "Unauthorized" }, 401, request, env);
         }
 
         if (url.pathname.replace(/\/$/, "") === "/verify") {
-          return json({ ok: true }, 200, env);
+          return json({ ok: true }, 200, request, env);
         }
 
         if (!body.data || typeof body.data !== "object") {
-          return json({ error: "Missing data" }, 400, env);
+          return json({ error: "Missing data" }, 400, request, env);
         }
         await writeGist(env, body.data);
-        return json({ ok: true }, 200, env);
+        return json({ ok: true }, 200, request, env);
       }
 
-      return json({ error: "Method not allowed" }, 405, env);
+      return json({ error: "Method not allowed" }, 405, request, env);
     } catch (err) {
-      return json({ error: String(err?.message || err) }, 502, env);
+      return json({ error: String(err?.message || err) }, 502, request, env);
     }
   },
 };

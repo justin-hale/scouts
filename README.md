@@ -61,15 +61,24 @@ URL and a password.
 4. Push to `main` (or run the **Deploy to GitHub Pages** workflow manually). The
    included workflow builds and publishes automatically.
 
-Your site will be at `https://<your-username>.github.io/<repo-name>/`.
+### 3. Custom domain (bolivarscouts.com)
 
-> The build sets the correct base path (`/<repo-name>/`) automatically. If you
-> later use a custom domain, set the `VITE_BASE` repo variable to `/`.
+The site is configured for the custom domain `bolivarscouts.com`:
 
-### 3. Lock down CORS
+- `public/CNAME` tells GitHub Pages the domain, and the build serves from the
+  domain root (`VITE_BASE: /` in the deploy workflow).
+- In **Settings → Pages**, set the Custom domain to `bolivarscouts.com` and
+  enable **Enforce HTTPS** once the certificate is provisioned.
+- DNS (managed in Cloudflare):
+  - Apex `bolivarscouts.com` → A records to GitHub Pages:
+    `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+  - `www` → CNAME to `<your-username>.github.io`
+  - Set these records to **DNS only** (grey cloud) so GitHub can provision TLS.
 
-Once the site is live, set `ALLOWED_ORIGIN` in `worker/wrangler.toml` to your
-Pages origin and redeploy the Worker (see `worker/README.md`).
+### 4. Lock down CORS
+
+`ALLOWED_ORIGIN` in `worker/wrangler.toml` is already set to the apex + `www`
+origins. Redeploy the Worker after any change (see `worker/README.md`).
 
 ## Day-to-day editing
 

@@ -27,8 +27,8 @@ jobs:
       - run: npm ci
       - name: Build
         env:
-          # Project sites are served from /<repo>/.
-          VITE_BASE: /${{ github.event.repository.name }}/
+          # Served from the root of the custom domain (bolivarscouts.com).
+          VITE_BASE: /
           # Set this repository variable to your Worker URL (Settings →
           # Secrets and variables → Actions → Variables). Blank = sample data.
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}

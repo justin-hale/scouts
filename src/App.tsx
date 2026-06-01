@@ -10,6 +10,7 @@ import {
 } from "date-fns";
 import type { CalendarEvent, CalendarView } from "./types";
 import { useCalendarData } from "./hooks/useCalendarData";
+import { monthSlug, parseMonthSlug } from "./utils/monthUrl";
 import { ViewSwitcher } from "./components/ViewSwitcher";
 import { AgendaView } from "./components/AgendaView";
 import { WeekView } from "./components/WeekView";
@@ -38,8 +39,12 @@ function periodLabel(view: CalendarView, cursor: Date): string {
 
 export default function App() {
   const cal = useCalendarData();
-  const [view, setView] = useState<CalendarView>(defaultView);
-  const [cursor, setCursor] = useState(() => new Date());
+  // A "/august-2026"-style URL opens straight to that month.
+  const urlMonth = useMemo(() => parseMonthSlug(window.location.pathname), []);
+  const [view, setView] = useState<CalendarView>(() =>
+    urlMonth ? "month" : defaultView()
+  );
+  const [cursor, setCursor] = useState<Date>(() => urlMonth ?? new Date());
 
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
   const [editing, setEditing] = useState<
@@ -64,6 +69,15 @@ export default function App() {
       setShowCategories(false);
     }
   }, [cal.isAuthed]);
+
+  // Reflect the visible month in the URL so it can be shared/bookmarked.
+  // Month view -> "/august-2026"; other views fall back to "/".
+  useEffect(() => {
+    const path = view === "month" ? monthSlug(cursor) : "/";
+    if (window.location.pathname !== path) {
+      window.history.replaceState(null, "", path + window.location.hash);
+    }
+  }, [view, cursor]);
 
   const step = (dir: 1 | -1) => {
     setCursor((c) =>

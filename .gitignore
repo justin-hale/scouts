@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+worker/.dev.vars
+worker/node_modules
+worker/.wrangler

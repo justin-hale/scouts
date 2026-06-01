@@ -3,11 +3,11 @@ import type { CalendarEvent, Category } from "../types";
 import { todayISO } from "../utils/dates";
 import { Modal } from "./Modal";
 
-function blankEvent(): CalendarEvent {
+function blankEvent(date: string): CalendarEvent {
   return {
     id: crypto.randomUUID(),
     title: "",
-    date: todayISO(),
+    date,
     allDay: false,
     startTime: "18:30",
     endTime: "",
@@ -39,17 +39,22 @@ function Field({
 
 export function EventEditor({
   initial,
+  defaultDate,
   categories,
   onCancel,
   onSave,
 }: {
   /** Existing event to edit, or undefined to create a new one. */
   initial?: CalendarEvent;
+  /** Pre-fills the date when creating a new event (e.g. a clicked day). */
+  defaultDate?: string;
   categories: Category[];
   onCancel: () => void;
   onSave: (event: CalendarEvent) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<CalendarEvent>(initial ?? blankEvent());
+  const [draft, setDraft] = useState<CalendarEvent>(
+    () => initial ?? blankEvent(defaultDate ?? todayISO())
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

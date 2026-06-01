@@ -43,7 +43,7 @@ export default function App() {
 
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
   const [editing, setEditing] = useState<
-    { event?: CalendarEvent } | null
+    { event?: CalendarEvent; date?: string } | null
   >(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -201,7 +201,9 @@ export default function App() {
             cursor={cursor}
             events={cal.data.events}
             categories={cal.data.categories}
+            canEdit={cal.isAuthed}
             onSelect={setSelected}
+            onAddOnDate={(date) => setEditing({ date })}
           />
         )}
       </main>
@@ -223,6 +225,7 @@ export default function App() {
       {editing && (
         <EventEditor
           initial={editing.event}
+          defaultDate={editing.date}
           categories={cal.data.categories}
           onCancel={() => setEditing(null)}
           onSave={handleSaveEvent}

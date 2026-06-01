@@ -114,30 +114,49 @@ export default function App() {
             </svg>
             <h1 className="text-lg font-bold tracking-tight">Cub Scouts Calendar</h1>
           </div>
-          {cal.isAuthed ? (
-            <div className="flex items-center gap-2 text-sm">
-              {cal.saving && <span className="text-blue-200">Saving…</span>}
-              <button
-                onClick={() => setShowCategories(true)}
-                className="rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
-              >
-                Categories
-              </button>
-              <button
-                onClick={cal.logout}
-                className="rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowLogin(true)}
-              className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-white/90 hover:bg-white/10"
+          <div className="flex items-center gap-1.5 text-sm">
+            <a
+              href="https://band.us/n/aaa0beC7Y4QaK"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open our Band for updates & messaging"
+              aria-label="Open our Band"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
             >
-              Sign in
-            </button>
-          )}
+              <img
+                src={`${import.meta.env.BASE_URL}band-icon.png`}
+                alt=""
+                width="20"
+                height="20"
+                className="rounded"
+              />
+              <span className="hidden sm:inline">Band</span>
+            </a>
+            {cal.isAuthed ? (
+              <>
+                {cal.saving && <span className="text-blue-200">Saving…</span>}
+                <button
+                  onClick={() => setShowCategories(true)}
+                  className="rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
+                >
+                  Categories
+                </button>
+                <button
+                  onClick={cal.logout}
+                  className="rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowLogin(true)}
+                className="rounded-lg px-2.5 py-1.5 font-medium text-white/90 hover:bg-white/10"
+              >
+                Sign in
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

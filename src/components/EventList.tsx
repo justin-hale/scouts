@@ -82,17 +82,6 @@ export function EventList({
                           {event.location}
                         </div>
                       )}
-                      {cat && (
-                        <span
-                          className="mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium"
-                          style={{
-                            backgroundColor: `${cat.color}1a`,
-                            color: cat.color,
-                          }}
-                        >
-                          {cat.name}
-                        </span>
-                      )}
                     </div>
                   </button>
                 </li>

@@ -11,6 +11,7 @@ import {
 import type { CalendarEvent, CalendarView } from "./types";
 import { useCalendarData } from "./hooks/useCalendarData";
 import { monthSlug, parseMonthSlug } from "./utils/monthUrl";
+import { Legend } from "./components/Legend";
 import { ViewSwitcher } from "./components/ViewSwitcher";
 import { AgendaView } from "./components/AgendaView";
 import { WeekView } from "./components/WeekView";
@@ -203,6 +204,10 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {!cal.loading && !cal.error && (
+          <Legend categories={cal.data.categories} events={cal.data.events} />
+        )}
 
         {cal.loading ? (
           <p className="py-16 text-center text-slate-400">Loading calendar…</p>

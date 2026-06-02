@@ -43,14 +43,15 @@ export default function App() {
   // A "/august-2026"-style URL opens straight to that month.
   const urlMonth = useMemo(() => parseMonthSlug(window.location.pathname), []);
   const [view, setView] = useState<CalendarView>(() =>
-    urlMonth ? "month" : defaultView()
+    urlMonth ? "month" : defaultView(),
   );
   const [cursor, setCursor] = useState<Date>(() => urlMonth ?? new Date());
 
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
-  const [editing, setEditing] = useState<
-    { event?: CalendarEvent; date?: string } | null
-  >(null);
+  const [editing, setEditing] = useState<{
+    event?: CalendarEvent;
+    date?: string;
+  } | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
 
@@ -60,7 +61,7 @@ export default function App() {
       selected?.categoryId
         ? cal.data.categories.find((c) => c.id === selected.categoryId)
         : undefined,
-    [selected, cal.data.categories]
+    [selected, cal.data.categories],
   );
 
   // If the signed-in editor signs out, close edit-only surfaces.
@@ -88,7 +89,7 @@ export default function App() {
           : subMonths(c, 1)
         : dir === 1
           ? addWeeks(c, 1)
-          : subWeeks(c, 1)
+          : subWeeks(c, 1),
     );
   };
 
@@ -109,11 +110,20 @@ export default function App() {
       <header className="border-b border-slate-200 bg-[#1d3461] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-amber-300">
-              <path d="M12 2 4 7v6c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V7l-8-5Z" opacity=".25" />
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="text-amber-300"
+            >
+              <path
+                d="M12 2 4 7v6c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V7l-8-5Z"
+                opacity=".25"
+              />
               <path d="m12 6 1.6 3.3 3.6.5-2.6 2.5.6 3.6L12 14.7 8.8 16.4l.6-3.6L6.8 9.8l3.6-.5L12 6Z" />
             </svg>
-            <h1 className="text-lg font-bold tracking-tight">Cub Scouts Calendar</h1>
+            <h1 className="text-lg font-bold tracking-tight">Calendar</h1>
           </div>
           <div className="flex items-center gap-1.5 text-sm">
             <a
@@ -163,32 +173,32 @@ export default function App() {
 
       <main className="mx-auto max-w-5xl px-4 py-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center">
             {view !== "agenda" && (
               <>
                 <button
                   onClick={() => step(-1)}
                   aria-label="Previous"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                  className="flex h-8 w-8 items-center justify-center rounded-l-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                 >
                   ‹
                 </button>
                 <button
                   onClick={() => setCursor(new Date())}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="border border-y-slate-300 border-x-0 bg-white px-3 h-8 text-sm font-medium text-slate-600 hover:bg-slate-50"
                 >
                   Today
                 </button>
                 <button
                   onClick={() => step(1)}
                   aria-label="Next"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                  className="flex h-8 w-8 items-center justify-center rounded-r-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                 >
                   ›
                 </button>
               </>
             )}
-            <h2 className="ml-1 text-lg font-semibold text-slate-700">
+            <h2 className="ml-4 text-lg font-semibold text-slate-700">
               {periodLabel(view, cursor)}
             </h2>
           </div>

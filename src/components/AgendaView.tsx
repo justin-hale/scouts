@@ -23,6 +23,7 @@ export function AgendaView({
       categories={categories}
       onSelect={onSelect}
       emptyMessage="No upcoming events."
+      groupByMonth
     />
   );
 }

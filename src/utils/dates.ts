@@ -20,6 +20,11 @@ export function formatDateLong(iso: string): string {
   return format(parseDate(iso), "EEEE, MMMM d, yyyy");
 }
 
+/** Format a "YYYY-MM-DD" date string as its month, e.g. "June 2026". */
+export function formatMonthLabel(iso: string): string {
+  return format(parseDate(iso), "MMMM yyyy");
+}
+
 /** Convert "HH:mm" 24h into a friendly "7:00 PM". Returns "" if empty/invalid. */
 export function formatTime(hhmm: string): string {
   if (!hhmm) return "";

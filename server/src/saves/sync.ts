@@ -2,9 +2,10 @@ import type { AppContext } from '../context.js';
 import { now } from '../db.js';
 import { sha256Buffer } from '../library/hash.js';
 import type { PlatformDef } from '../platforms.js';
-import { parseSavePath, renderSavePath, type Profile, type SaveKey } from '../profiles/profiles.js';
+import { parseSavePath, renderSavePath, type ParsedSave, type Profile } from '../profiles/profiles.js';
 import { normalizePath } from '../profiles/template.js';
 import { localStemForServer, serverStemForLocal } from '../roms/matching.js';
+import { decodeSave } from './formats.js';
 import { SaveStore, type SaveRow } from './store.js';
 
 /** A save file as the device sees it, relative to the platform's mapped save folder. */
@@ -68,7 +69,7 @@ export class SyncService {
   }
 
   /** Device path -> canonical key, translating ROM names through the device's ROM matches. */
-  private toKey(deviceId: number, def: PlatformDef, profile: Profile, localPath: string): SaveKey | null {
+  private toKey(deviceId: number, def: PlatformDef, profile: Profile, localPath: string): ParsedSave | null {
     const key = parseSavePath(profile, def, localPath);
     if (!key) return null;
     if (def.keyKind === 'rom') {
@@ -143,6 +144,9 @@ export class SyncService {
       if (sha === current.sha256) {
         if (state?.version_id !== current.id) this.setState(deviceId, save.id, current.id, current.sha256);
         actions.push({ action: 'ok', path, saveId: save.id, versionId: current.id });
+      } else if (state && state.version_id === current.id && state.sha256 === sha) {
+        // Same save, but the emulator wraps it differently (e.g. a .dsv footer).
+        actions.push({ action: 'ok', path, saveId: save.id, versionId: current.id });
       } else if (conflict) {
         actions.push({ action: 'pending-conflict', path, saveId: save.id, conflictId: conflict.id });
       } else if (state && state.sha256 === sha) {
@@ -186,23 +190,27 @@ export class SyncService {
     const { def, profile } = this.mapping(deviceId, platform);
     const key = this.toKey(deviceId, def, profile, localPath);
     if (!key) throw new SyncError(`"${localPath}" is not a save file for profile ${profile.id}`);
-    const sha = sha256Buffer(data);
+    // The device's state records the hash of the file as it is on the device;
+    // the server stores the unwrapped raw save.
+    const deviceSha = sha256Buffer(data);
+    const raw = decodeSave(key.format, data);
+    const sha = sha256Buffer(raw);
 
     return this.ctx.db.tx(() => {
       const save = this.store.findOrCreateSave(platform, key);
       const current = save.current_version_id ? this.store.getVersion(save.current_version_id) : undefined;
 
       if (current?.sha256 === sha) {
-        this.setState(deviceId, save.id, current.id, sha);
+        this.setState(deviceId, save.id, current.id, deviceSha);
         return { status: 'ok' as const, saveId: save.id, versionId: current.id };
       }
       if (!current || (!asConflict && current.id === baseVersionId && !this.openConflict(deviceId, save.id))) {
-        const v = this.store.addVersion(save, data, { deviceId, makeCurrent: true, parentVersionId: current?.id ?? null });
-        this.setState(deviceId, save.id, v.id, sha);
+        const v = this.store.addVersion(save, raw, { deviceId, makeCurrent: true, parentVersionId: current?.id ?? null });
+        this.setState(deviceId, save.id, v.id, deviceSha);
         return { status: 'ok' as const, saveId: save.id, versionId: v.id };
       }
 
-      const v = this.store.addVersion(save, data, {
+      const v = this.store.addVersion(save, raw, {
         deviceId,
         makeCurrent: false,
         parentVersionId: baseVersionId,
@@ -222,7 +230,7 @@ export class SyncService {
       }
       // The device now "agrees" with its own copy, so once the conflict is
       // resolved the plan above naturally downloads or confirms.
-      this.setState(deviceId, save.id, v.id, sha);
+      this.setState(deviceId, save.id, v.id, deviceSha);
       return { status: 'conflict' as const, saveId: save.id, versionId: v.id, conflictId };
     });
   }

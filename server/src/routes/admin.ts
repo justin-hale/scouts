@@ -220,6 +220,21 @@ export const adminRoutes =
 
       // --- saves & conflicts ---------------------------------------------------
 
+      admin.get<{ Querystring: { platform?: string } }>('/saves', async (req) =>
+        db.all(
+          `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
+             g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
+             (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
+           FROM saves s
+           LEFT JOIN games g ON g.id = s.game_id
+           LEFT JOIN save_versions v ON v.id = s.current_version_id
+           LEFT JOIN devices d ON d.id = v.device_id
+           WHERE s.current_version_id IS NOT NULL AND ($p IS NULL OR s.platform = $p)
+           ORDER BY s.platform, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
+          { $p: req.query.platform ?? null },
+        ),
+      );
+
       admin.get<IdParams>('/saves/:id/versions', async (req) =>
         db.all(
           `SELECT v.id, v.sha256, v.size, v.created_at AS createdAt, v.note, v.parent_version_id AS parentVersionId,

@@ -11,7 +11,7 @@ export default function Devices() {
     <>
       <PageHeader
         title="Devices"
-        subtitle="Phones, handhelds and PCs running the Bonfire app. Each one chooses where its emulators keep saves."
+        subtitle="Phones, handhelds and PCs running the RomSafe app. Each one chooses where its emulators keep saves."
         actions={
           <Button variant="primary" onClick={() => setPairing(true)}>
             Pair a device
@@ -20,7 +20,7 @@ export default function Devices() {
       />
       <ErrorNote error={devices.error} />
       {devices.data?.length === 0 && (
-        <Card className="p-6 text-sm text-stone-400">No devices yet. Install the Bonfire app on Android or Windows and pair it with a code.</Card>
+        <Card className="p-6 text-sm text-stone-400">No devices yet. Install the RomSafe app on Android or Windows and pair it with a code.</Card>
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {devices.data?.map((d) => (
@@ -64,7 +64,7 @@ function PairModal({ onClose }: { onClose: () => void }) {
     <Modal title="Pair a device" onClose={onClose}>
       <ErrorNote error={error} />
       <ol className="list-decimal space-y-2 pl-5 text-sm text-stone-300">
-        <li>Open the Bonfire app on your device.</li>
+        <li>Open the RomSafe app on your device.</li>
         <li>
           Enter this server's address: <code className="rounded bg-stone-800 px-1.5 py-0.5">{server}</code>
         </li>
@@ -72,7 +72,7 @@ function PairModal({ onClose }: { onClose: () => void }) {
       </ol>
       {code && (
         <div className="my-5 text-center">
-          <div className="font-mono text-4xl font-bold tracking-[0.3em] text-ember-400">{code.code}</div>
+          <div className="font-mono text-4xl font-bold tracking-[0.3em] text-brand-400">{code.code}</div>
           <div className="mt-2 text-xs text-stone-500">Expires at {new Date(code.expiresAt).toLocaleTimeString()}</div>
         </div>
       )}

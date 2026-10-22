@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { coverUrl, get, patch, post, type Candidate, type GameDetail, type SaveVersion } from '../api';
-import { Badge, Button, Card, ErrorNote, formatBytes, formatTime, Input, Modal, useApi } from '../components/ui';
+import { coverUrl, get, patch, post, type Candidate, type GameDetail } from '../api';
+import { SaveCard } from '../components/SaveCard';
+import { Badge, Button, Card, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
 
 export default function Game() {
   const id = Number(useParams().id);
@@ -99,7 +100,7 @@ export default function Game() {
                 <td className="px-4 py-2 font-mono text-xs break-all">{r.sha1}</td>
                 <td className="px-4 py-2">
                   {!r.missing && (
-                    <a className="text-ember-400 hover:underline" href={`/api/roms/${r.id}/download`}>
+                    <a className="text-brand-400 hover:underline" href={`/api/roms/${r.id}/download`}>
                       Download
                     </a>
                   )}
@@ -113,70 +114,6 @@ export default function Game() {
       {searching && <MetadataSearch game={g} onClose={() => setSearching(false)} onApplied={game.reload} />}
       {editing && <EditGame game={g} onClose={() => setEditing(false)} onSaved={game.reload} />}
     </>
-  );
-}
-
-function SaveCard({ save, onChange }: { save: GameDetail['saves'][number]; onChange: () => void }) {
-  const [open, setOpen] = useState(false);
-  const versions = useApi(() => (open ? get<SaveVersion[]>(`/saves/${save.id}/versions`) : Promise.resolve([])), [open, save.currentVersionId]);
-
-  const restore = async (versionId: number) => {
-    await post(`/saves/${save.id}/restore`, { versionId });
-    onChange();
-  };
-
-  return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="font-mono text-sm text-stone-100">{save.file}</div>
-          <div className="mt-1 text-xs text-stone-500">
-            {formatBytes(save.size)} · updated {formatTime(save.updatedAt)} {save.updatedBy && `by ${save.updatedBy}`} · {save.versionCount}{' '}
-            version{save.versionCount === 1 ? '' : 's'}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {save.currentVersionId && (
-            <a
-              href={`/api/save-versions/${save.currentVersionId}/download`}
-              className="rounded-md border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100 hover:bg-stone-700"
-            >
-              Download
-            </a>
-          )}
-          <Button variant="ghost" onClick={() => setOpen(!open)}>
-            {open ? 'Hide history' : 'History'}
-          </Button>
-        </div>
-      </div>
-      {open && (
-        <table className="mt-4 w-full text-sm">
-          <tbody>
-            {versions.data?.map((v) => (
-              <tr key={v.id} className="border-t border-stone-800">
-                <td className="py-2 pr-3 whitespace-nowrap">{formatTime(v.createdAt)}</td>
-                <td className="py-2 pr-3">{v.device ?? 'server'}</td>
-                <td className="py-2 pr-3">{formatBytes(v.size)}</td>
-                <td className="py-2 pr-3 font-mono text-xs text-stone-500">{v.sha256.slice(0, 12)}</td>
-                <td className="py-2 pr-3 text-xs text-stone-400">{v.note}</td>
-                <td className="py-2 text-right whitespace-nowrap">
-                  {v.isCurrent ? (
-                    <Badge tone="green">current</Badge>
-                  ) : (
-                    <Button variant="ghost" onClick={() => restore(v.id)}>
-                      Restore
-                    </Button>
-                  )}
-                  <a className="ml-2 text-xs text-ember-400 hover:underline" href={`/api/save-versions/${v.id}/download`}>
-                    download
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
   );
 }
 
@@ -228,7 +165,7 @@ function MetadataSearch({ game, onClose, onApplied }: { game: GameDetail; onClos
       {results && results.providers.length === 0 && (
         <p className="text-sm text-stone-400">
           No metadata providers are configured. Add IGDB or SteamGridDB keys in{' '}
-          <Link to="/settings" className="text-ember-400 underline">
+          <Link to="/settings" className="text-brand-400 underline">
             Settings
           </Link>
           .
@@ -240,7 +177,7 @@ function MetadataSearch({ game, onClose, onApplied }: { game: GameDetail; onClos
             key={`${c.provider}-${c.id}`}
             disabled={busy}
             onClick={() => apply(c)}
-            className="flex w-full gap-3 rounded-lg border border-stone-800 p-2 text-left hover:border-ember-500 hover:bg-stone-800/50"
+            className="flex w-full gap-3 rounded-lg border border-stone-800 p-2 text-left hover:border-brand-500 hover:bg-stone-800/50"
           >
             <div className="h-20 w-14 shrink-0 overflow-hidden rounded bg-stone-800">
               {c.coverUrl && <img src={c.coverUrl} alt="" className="h-full w-full object-cover" />}
@@ -249,7 +186,7 @@ function MetadataSearch({ game, onClose, onApplied }: { game: GameDetail; onClos
               <div className="font-medium text-stone-100">
                 {c.name} {c.year && <span className="text-stone-500">({c.year})</span>}
               </div>
-              <Badge tone={c.provider === 'igdb' ? 'sky' : 'ember'}>{c.provider === 'igdb' ? 'IGDB' : 'SteamGridDB cover'}</Badge>
+              <Badge tone={c.provider === 'igdb' ? 'sky' : 'brand'}>{c.provider === 'igdb' ? 'IGDB' : 'SteamGridDB cover'}</Badge>
               {c.summary && <p className="mt-1 line-clamp-2 text-xs text-stone-400">{c.summary}</p>}
             </div>
           </button>

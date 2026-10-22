@@ -1,0 +1,16 @@
+id: duckstation
+name: DuckStation
+description: >
+  Set memory card 1 (and 2) to "Separate Card Per Game (File Name)" so cards
+  are named after the disc image, then pick DuckStation's "memcards" folder.
+  Card 1 is the same save as RetroArch's .srm, so saves move between
+  DuckStation and the RetroArch PlayStation cores.
+defaultPaths:
+  windows: ["%USERPROFILE%\\Documents\\DuckStation\\memcards"]
+saves:
+  - platforms: ["psx"]
+    pattern: "{game}_1.mcd"
+    file: battery.sav
+  - platforms: ["psx"]
+    pattern: "{game}_2.mcd"
+    file: card2.mcd

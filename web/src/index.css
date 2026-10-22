@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ember-400: #fb923c;
-  --color-ember-500: #f97316;
-  --color-ember-600: #ea580c;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
 }
 
 html,

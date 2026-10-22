@@ -30,11 +30,11 @@ export interface TestDevice {
 export const sha256 = (b: Buffer | string) => crypto.createHash('sha256').update(b).digest('hex');
 
 export async function startServer(): Promise<TestServer> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bonfire-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'romsafe-test-'));
   const config = loadConfig({
-    BONFIRE_DATA_DIR: path.join(dir, 'data'),
-    BONFIRE_PROFILES_DIR: path.join(repoRoot, 'profiles'),
-    BONFIRE_WEB_DIR: path.join(dir, 'no-web'),
+    ROMSAFE_DATA_DIR: path.join(dir, 'data'),
+    ROMSAFE_PROFILES_DIR: path.join(repoRoot, 'profiles'),
+    ROMSAFE_WEB_DIR: path.join(dir, 'no-web'),
   });
   const { app, services } = await buildApp(config);
 

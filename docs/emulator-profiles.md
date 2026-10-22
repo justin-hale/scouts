@@ -65,16 +65,45 @@ The 3DS default matches Citra's layout, so you can copy `~/saves/3ds` straight i
 
 | Profile | Platforms | Saves |
 | --- | --- | --- |
-| `retroarch` | all ROM-keyed | `{game}.srm`, `{game}.rtc` |
+| `retroarch` | all ROM-keyed (incl. psx) | `{game}.srm`, `{game}.rtc` |
 | `generic-sav` | all ROM-keyed | `{game}.sav` |
 | `mgba` | gb, gbc, gba | `{game}.sav` |
 | `melonds` | nds | `{game}.sav` |
+| `drastic` | nds | `{game}.dsv` (DeSmuME footer stripped) |
 | `azahar` | 3ds | Citra-style `Nintendo 3DS/...` |
+| `dolphin` | gc, wii | `GC/MemoryCardA.USA.raw`, `GC/USA/Card A/*.gci`, `Wii/title/...` |
+| `duckstation` | psx | `{game}_1.mcd`, `{game}_2.mcd` (per-game cards by file name) |
+| `pcsx2` | ps2 | `{card}.ps2` (PCSX2, NetherSX2, AetherSX2) |
+| `flycast` | dreamcast | `vmu_save_{card}.bin` |
 | `ppsspp` | psp | `PSP/SAVEDATA/{saveDir}/...` |
+
+## Memory cards
+
+GameCube, PS2 and Dreamcast saves usually live on memory cards that hold many games. On those
+platforms the game key is the **card**, and the whole card file syncs as one save:
+
+| Platform | Card key | Example |
+| --- | --- | --- |
+| `gc` | `{region}/{slot}` | `USA/A`, from `MemoryCardA.USA.raw` or `GC/USA/Card A/` |
+| `ps2` | `{card}` | `Mcd001` |
+| `dreamcast` | `{card}` | `A1` (controller A, slot 1) |
+
+Use the same card names on every device. Card saves aren't linked to a game; they appear on the
+**Saves** page. Two devices writing to the same card between syncs is a conflict, as with any
+other save. Dolphin's GCI folder mode stores one file per game, so it conflicts far less often
+than raw cards.
+
+## Save formats
+
+`format:` on a rule names a wrapper the emulator puts around the raw save. Uploads are unwrapped
+so the server always stores the raw save, and downloads are written raw.
+
+| Format | Used by | Effect |
+| --- | --- | --- |
+| `desmume-dsv` | DraStic, DeSmuME | strips the "Snip above here…" text footer DeSmuME appends |
 
 ## Known gaps / ideas
 
-- DraStic and DeSmuME (`.dsv`) add a footer to DS saves, so they need a converter step.
-- Memory-card systems (PS1/PS2/GameCube) share one card file across many games. These will be
-  synced as whole cards (game key = card name) rather than per game.
-- Dolphin GCI folders, DuckStation per-game cards and Switch saves are all good next profiles.
+- PCSX2 folder memory cards and Dolphin's Wii save exports (`.bin` in `Wii/sd`).
+- Per-game Dreamcast VMUs (RetroArch Flycast option) and Redream's `vmu*.bin` naming.
+- Switch saves.

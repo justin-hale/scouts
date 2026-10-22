@@ -4,6 +4,7 @@ import type { AppContext, PlatformConfig } from '../context.js';
 import { now } from '../db.js';
 import { SaveStore, walkFiles } from '../saves/store.js';
 import { hashRom } from './hash.js';
+import { readDiscId, wiiTitleId } from './disc.js';
 import { read3dsTitleId } from './n3ds.js';
 import { cleanTitle, fileStem } from './names.js';
 
@@ -126,7 +127,7 @@ export class Scanner {
     }
 
     const hashes = await hashRom(abs);
-    const titleId = slug === '3ds' ? await read3dsTitleId(abs).catch(() => null) : null;
+    const titleId = await readTitleId(slug, abs);
     const fileName = path.posix.basename(rel);
 
     db.tx(() => {
@@ -177,4 +178,19 @@ export class Scanner {
       { $p: platform, $t: title, $tid: titleId, $now: now() },
     ).lastId;
   }
+}
+
+/** Platform-native ID used to group discs into games and link title-keyed saves. */
+async function readTitleId(platform: string, file: string): Promise<string | null> {
+  try {
+    if (platform === '3ds') return await read3dsTitleId(file);
+    if (platform === 'gc' || platform === 'wii') {
+      const disc = await readDiscId(file);
+      if (!disc) return null;
+      return disc.system === 'wii' ? wiiTitleId(disc.gameId) : disc.gameId.toLowerCase();
+    }
+  } catch {
+    // Unreadable header: fall back to grouping by file name.
+  }
+  return null;
 }

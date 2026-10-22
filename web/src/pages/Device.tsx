@@ -88,7 +88,7 @@ export default function DevicePage() {
                 <tr key={m.platform} className="border-t border-stone-800">
                   <td className="px-4 py-2">{platformNames.get(m.platform) ?? m.platform}</td>
                   <td className="px-4 py-2">
-                    <Badge tone="ember">{m.profile}</Badge>
+                    <Badge tone="brand">{m.profile}</Badge>
                   </td>
                   <td className="px-4 py-2 font-mono text-xs break-all text-stone-400">{m.saveRoot ?? '—'}</td>
                   <td className="px-4 py-2 font-mono text-xs break-all text-stone-400">{m.romRoot ?? '—'}</td>
@@ -178,7 +178,7 @@ function RomTable({ deviceId, platform }: { deviceId: number; platform: string }
               <tr key={r.romId} className="border-t border-stone-800 first:border-t-0">
                 <td className="w-8 px-4 py-2">
                   {!r.localPath && !r.queued && (
-                    <input type="checkbox" className="accent-ember-500" checked={picked.has(r.romId)} onChange={() => toggle(r.romId)} />
+                    <input type="checkbox" className="accent-brand-500" checked={picked.has(r.romId)} onChange={() => toggle(r.romId)} />
                   )}
                 </td>
                 <td className="py-2 pr-3">
@@ -191,7 +191,7 @@ function RomTable({ deviceId, platform }: { deviceId: number; platform: string }
                     <Badge tone="green">on device</Badge>
                   ) : r.queued ? (
                     <>
-                      <Badge tone="ember">queued</Badge>{' '}
+                      <Badge tone="brand">queued</Badge>{' '}
                       <button className="text-xs text-stone-500 hover:text-stone-300" onClick={() => unqueue(r.romId)}>
                         cancel
                       </button>

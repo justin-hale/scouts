@@ -1,8 +1,8 @@
-# 🔥 Bonfire
+# 🛡️ RomSafe
 
-**Your game library and saves, kept warm on every device.**
+**Your ROM library and saves, kept safe and in sync on every device.**
 
-Bonfire is a self-hosted ROM library and save-sync server. Think RomM's
+RomSafe is a self-hosted ROM library and save-sync server. Think RomM's
 library and metadata, plus Syncthing-style sync that understands emulators:
 
 - **Library.** Scans your ROM folders, hashes every file, groups files into games, and scrapes
@@ -10,17 +10,17 @@ library and metadata, plus Syncthing-style sync that understands emulators:
 - **Save backups.** Every save version is kept. The current version of each save is also written
   as a plain file into the save folder you choose, e.g. `~/saves/3ds/...`.
 - **Per-device mapping.** On each phone, handheld or PC you pick, per platform, which emulator you
-  use and the folder where it keeps saves. Bonfire translates between layouts. A save made in
+  use and the folder where it keeps saves. RomSafe translates between layouts. A save made in
   RetroArch on Android (`Game.srm`) lands in mGBA on Windows as `Game.sav`, and 3DS saves keep
   Azahar's `Nintendo 3DS/<id0>/<id1>/title/...` structure.
-- **ROM tracking.** Devices report which ROMs they have. Bonfire matches them to server ROMs (by
+- **ROM tracking.** Devices report which ROMs they have. RomSafe matches them to server ROMs (by
   hash, file name or title) and lets you send missing ROMs to a device.
-- **Safe conflicts.** If a save changed on both sides, Bonfire keeps both copies and asks you which
+- **Safe conflicts.** If a save changed on both sides, RomSafe keeps both copies and asks you which
   one wins. Nothing is silently overwritten.
 
 ```
              ┌────────────────────────────────────────┐
-             │  Bonfire server (Docker / LXC)         │
+             │  RomSafe server (Docker / LXC)         │
              │  web GUI · library scanner · scraper   │
              │  save store + history · sync API       │
              └────────▲───────────────────▲───────────┘
@@ -36,11 +36,11 @@ library and metadata, plus Syncthing-style sync that understands emulators:
 
 | Piece | State |
 | --- | --- |
-| Server: library scan, hashing, 3DS title IDs | ✅ |
+| Server: library scan, hashing, 3DS title IDs, GameCube/Wii disc IDs | ✅ |
 | Server: metadata and cover scraping | ✅ IGDB, SteamGridDB, libretro thumbnails |
 | Server: save sync, version history, conflicts | ✅ with an end-to-end test suite |
 | Server: ROM inventory matching and download queue | ✅ |
-| Web GUI | ✅ library, game pages, platforms, devices, conflicts, settings |
+| Web GUI | ✅ library, game pages, saves, platforms, devices, conflicts, settings |
 | Docker image | ✅ |
 | Android app | 🛠 planned: see [clients/README.md](clients/README.md) |
 | Windows app | 🛠 planned, sharing the Android sync engine |
@@ -48,7 +48,7 @@ library and metadata, plus Syncthing-style sync that understands emulators:
 ## Quick start (Docker)
 
 ```sh
-git clone <this repo> bonfire && cd bonfire
+git clone <this repo> romsafe && cd romsafe
 # edit docker-compose.yml: the volume paths and the user/uid
 docker compose up -d --build
 ```
@@ -64,12 +64,12 @@ Open `http://<server>:8080` and create an admin password. Then:
 
 ### LXC (Proxmox etc.)
 
-Either run Docker inside the container, or run Bonfire directly on Node.js 24:
+Either run Docker inside the container, or run RomSafe directly on Node.js 24:
 
 ```sh
 apt install -y git curl && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && apt install -y nodejs
-git clone <this repo> /opt/bonfire && cd /opt/bonfire && npm ci && npm run build
-BONFIRE_DATA_DIR=/var/lib/bonfire node server/dist/index.js
+git clone <this repo> /opt/romsafe && cd /opt/romsafe && npm ci && npm run build
+ROMSAFE_DATA_DIR=/var/lib/romsafe node server/dist/index.js
 ```
 
 (Wrap the last line in a systemd unit to start it on boot.)
@@ -78,12 +78,12 @@ BONFIRE_DATA_DIR=/var/lib/bonfire node server/dist/index.js
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BONFIRE_PORT` | `8080` | HTTP port |
-| `BONFIRE_DATA_DIR` | `./data` (`/data` in Docker) | Database, save history blobs, covers |
-| `BONFIRE_ADMIN_PASSWORD` | unset | Fixed admin password (otherwise set on first run) |
-| `BONFIRE_PROFILES_DIR` | `./profiles` | Emulator profile YAML files |
+| `ROMSAFE_PORT` | `8080` | HTTP port |
+| `ROMSAFE_DATA_DIR` | `./data` (`/data` in Docker) | Database, save history blobs, covers |
+| `ROMSAFE_ADMIN_PASSWORD` | unset | Fixed admin password (otherwise set on first run) |
+| `ROMSAFE_PROFILES_DIR` | `./profiles` | Emulator profile YAML files |
 
-Put Bonfire behind a reverse proxy with HTTPS (Caddy, Traefik, Nginx Proxy Manager) if devices
+Put RomSafe behind a reverse proxy with HTTPS (Caddy, Traefik, Nginx Proxy Manager) if devices
 reach it over the internet. Device tokens are bearer tokens.
 
 ## How saves are identified
@@ -93,12 +93,13 @@ Each save is stored under a **game key** plus a **file name**:
 | Platform type | Game key | Example |
 | --- | --- | --- |
 | Cartridge systems (GB/GBA/NES/SNES/N64/DS/Genesis…) | ROM file name without extension | `Metroid Fusion (USA)` + `battery.sav` |
-| 3DS | Title ID | `00040000000a5e00` + `00000001/main` |
+| 3DS, Wii | Title ID (read from the ROM or disc header) | `00040000000a5e00` + `00000001/main` |
 | PSP | `SAVEDATA` folder name | `ULUS10336DATA00` + `DATA.BIN` |
+| GameCube, PS2, Dreamcast | Memory card | `USA/A` + `card.raw`, `Mcd001` + `card.ps2`, `A1` + `vmu.bin` |
 
 **Emulator profiles** (`profiles/*.yaml`) map those keys to each emulator's file layout, and each
 platform's **save layout** decides where the server writes its copy. When a device names a ROM
-differently from the server, Bonfire uses the ROM match to translate the save name. See
+differently from the server, RomSafe uses the ROM match to translate the save name. See
 [docs/emulator-profiles.md](docs/emulator-profiles.md).
 
 ## Development

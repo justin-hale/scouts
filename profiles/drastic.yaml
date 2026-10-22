@@ -1,0 +1,13 @@
+id: drastic
+name: DraStic
+description: >
+  Pick DraStic's "backup" folder. DraStic's .dsv files are raw saves with a
+  DeSmuME footer. The footer is removed on upload, so the same save works in
+  melonDS and RetroArch.
+defaultPaths:
+  android: ["DraStic/backup"]
+saves:
+  - platforms: ["nds"]
+    pattern: "{game}.dsv"
+    file: battery.sav
+    format: desmume-dsv

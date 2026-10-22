@@ -12,10 +12,10 @@ RUN npm run build
 
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production \
-    BONFIRE_PORT=8080 \
-    BONFIRE_DATA_DIR=/data \
-    BONFIRE_PROFILES_DIR=/app/profiles \
-    BONFIRE_WEB_DIR=/app/web/dist
+    ROMSAFE_PORT=8080 \
+    ROMSAFE_DATA_DIR=/data \
+    ROMSAFE_PROFILES_DIR=/app/profiles \
+    ROMSAFE_WEB_DIR=/app/web/dist
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/
@@ -30,5 +30,5 @@ RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+process.env.BONFIRE_PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+process.env.ROMSAFE_PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server/dist/index.js"]

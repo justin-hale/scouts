@@ -70,7 +70,7 @@ function PlatformCard({ platform: p, onSaved }: { platform: Platform; onSaved: (
           </span>
         </div>
         <label className="flex items-center gap-2 text-sm text-stone-400">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-ember-500" />
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="accent-brand-500" />
           Enabled
         </label>
       </div>
@@ -88,7 +88,11 @@ function PlatformCard({ platform: p, onSaved }: { platform: Platform; onSaved: (
             hint={
               <>
                 Leave blank for the default. Saves are keyed by{' '}
-                {p.keyKind === 'rom' ? 'ROM file name' : p.keyKind === 'titleId' ? 'title ID' : 'save folder name'}. Emulator profiles
+                {
+                  { rom: 'ROM file name', titleId: 'title ID', saveDir: 'save folder name', card: 'memory card (shared by many games)' }[
+                    p.keyKind
+                  ]
+                }. Emulator profiles
                 that support this platform: {p.profiles.join(', ') || 'none'}.
               </>
             }

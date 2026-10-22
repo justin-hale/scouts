@@ -30,11 +30,11 @@ export default function Settings() {
       <p className="mb-3 text-sm text-stone-400">
         Box art from <b>libretro thumbnails</b> works with no setup when your ROMs use No-Intro / Redump names. For descriptions, release
         dates and better matching add{' '}
-        <a className="text-ember-400 underline" href="https://api-docs.igdb.com/#account-creation" target="_blank" rel="noreferrer">
+        <a className="text-brand-400 underline" href="https://api-docs.igdb.com/#account-creation" target="_blank" rel="noreferrer">
           IGDB (free Twitch app)
         </a>{' '}
         credentials, and a{' '}
-        <a className="text-ember-400 underline" href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noreferrer">
+        <a className="text-brand-400 underline" href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noreferrer">
           SteamGridDB API key
         </a>{' '}
         for more cover art.
@@ -76,7 +76,7 @@ export default function Settings() {
             {p.description && <p className="mt-2 text-sm text-stone-400">{p.description}</p>}
             <div className="mt-3 flex flex-wrap gap-1">
               {p.platforms.map((s) => (
-                <Badge key={s} tone="ember">
+                <Badge key={s} tone="brand">
                   {s}
                 </Badge>
               ))}

@@ -23,7 +23,7 @@ export interface Services {
 }
 
 export async function buildApp(config: Config, opts: { logger?: boolean } = {}): Promise<{ app: FastifyInstance; services: Services }> {
-  const db = new Db(path.join(config.dataDir, 'bonfire.db'));
+  const db = new Db(path.join(config.dataDir, 'romsafe.db'));
   const ctx = new AppContext(config, db, new Auth(db, config.adminPassword), loadProfiles(config.profilesDir));
   const services: Services = {
     ctx,
@@ -51,7 +51,7 @@ export async function buildApp(config: Config, opts: { logger?: boolean } = {}):
     return reply.code(status).send({ error: status >= 500 ? 'Internal server error' : (err as Error).message });
   });
 
-  app.get('/api/health', async () => ({ ok: true, name: 'bonfire', version: '0.1.0' }));
+  app.get('/api/health', async () => ({ ok: true, name: 'romsafe', version: '0.1.0' }));
   await app.register(authRoutes(services), { prefix: '/api/auth' });
   await app.register(adminRoutes(services), { prefix: '/api' });
   await app.register(deviceRoutes(services), { prefix: '/api/device' });

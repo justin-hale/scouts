@@ -165,3 +165,45 @@ test('device endpoints reject unknown tokens and unsafe paths', async () => {
   const noAdmin = await srv.app.inject({ method: 'GET', url: '/api/devices' });
   assert.equal(noAdmin.statusCode, 401);
 });
+
+test('DraStic .dsv saves are stored raw and shared with melonDS', async () => {
+  const thor = await srv.pairDevice('AYN Thor');
+  await thor.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'nds', profile: 'drastic' }] });
+  await pc.call('PUT', '/api/device/mappings', {
+    mappings: [
+      { platform: 'gba', profile: 'mgba' },
+      { platform: 'nds', profile: 'melonds' },
+    ],
+  });
+  const raw = Buffer.alloc(1024, 3);
+  const footer = Buffer.from('|<--Snip above here to create a raw sav by excluding this DeSmuME savedata footer:\0\0\0\0|-DESMUME SAV-|');
+  const dsv = Buffer.concat([raw, footer]);
+
+  let actions = await plan(thor, 'nds', { 'Pokemon Platinum.dsv': dsv });
+  assert.equal(actions[0].action, 'upload');
+  await thor.upload('nds', 'Pokemon Platinum.dsv', dsv, null);
+
+  // The Thor's file (with footer) is in sync even though the server stores it raw.
+  assert.equal((await plan(thor, 'nds', { 'Pokemon Platinum.dsv': dsv }))[0].action, 'ok');
+
+  actions = await plan(pc, 'nds', {});
+  assert.equal(actions[0].path, 'Pokemon Platinum.sav');
+  assert.deepEqual(await pc.download(actions[0].versionId), raw);
+});
+
+test('PS2 memory cards sync as whole cards', async () => {
+  const card = Buffer.alloc(2048, 9);
+  await phone.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'ps2', profile: 'pcsx2' }] });
+  await pc.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'ps2', profile: 'pcsx2' }] });
+  assert.equal((await plan(phone, 'ps2', { 'Mcd001.ps2': card }))[0].action, 'upload');
+  await phone.upload('ps2', 'Mcd001.ps2', card, null);
+  const actions = await plan(pc, 'ps2', {});
+  assert.deepEqual(
+    actions.map((a) => [a.action, a.path]),
+    [['download', 'Mcd001.ps2']],
+  );
+  const list = await srv.admin('GET', '/api/saves?platform=ps2');
+  assert.equal(list.body.length, 1);
+  assert.equal(list.body[0].gameId, null);
+  assert.equal(list.body[0].gameKey, 'Mcd001');
+});

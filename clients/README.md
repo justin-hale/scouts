@@ -1,4 +1,4 @@
-# Bonfire clients
+# RomSafe clients
 
 Both apps will share one Kotlin Multiplatform **sync engine**, so the planning, hashing, conflict
 and retry logic is written once.

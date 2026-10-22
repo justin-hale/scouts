@@ -28,7 +28,7 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'primary' | 'danger' | 'ghost' }) {
   const styles = {
     default: 'bg-stone-800 hover:bg-stone-700 text-stone-100 border border-stone-700',
-    primary: 'bg-ember-600 hover:bg-ember-500 text-white',
+    primary: 'bg-brand-600 hover:bg-brand-500 text-white',
     danger: 'bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800',
     ghost: 'hover:bg-stone-800 text-stone-300',
   }[variant];
@@ -61,10 +61,10 @@ export function ErrorNote({ error }: { error: string | null }) {
   return <div className="mb-4 rounded-md border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-200">{error}</div>;
 }
 
-export function Badge({ children, tone = 'stone' }: { children: ReactNode; tone?: 'stone' | 'ember' | 'green' | 'red' | 'sky' }) {
+export function Badge({ children, tone = 'stone' }: { children: ReactNode; tone?: 'stone' | 'brand' | 'green' | 'red' | 'sky' }) {
   const tones = {
     stone: 'bg-stone-800 text-stone-300',
-    ember: 'bg-ember-600/20 text-ember-400',
+    brand: 'bg-brand-600/20 text-brand-400',
     green: 'bg-emerald-900/50 text-emerald-300',
     red: 'bg-red-900/50 text-red-300',
     sky: 'bg-sky-900/50 text-sky-300',
@@ -76,7 +76,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-md border border-stone-700 bg-stone-950 px-3 py-1.5 text-sm text-stone-100 placeholder:text-stone-600 focus:border-ember-500 focus:outline-none ${props.className ?? ''}`}
+      className={`w-full rounded-md border border-stone-700 bg-stone-950 px-3 py-1.5 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brand-500 focus:outline-none ${props.className ?? ''}`}
     />
   );
 }
@@ -106,7 +106,7 @@ export function Progress({ value, total }: { value: number; total: number }) {
   const pct = total ? Math.round((value / total) * 100) : 0;
   return (
     <div className="h-1.5 w-full overflow-hidden rounded bg-stone-800">
-      <div className="h-full bg-ember-500 transition-all" style={{ width: `${pct}%` }} />
+      <div className="h-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} />
     </div>
   );
 }

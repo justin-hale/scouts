@@ -88,6 +88,7 @@ export class SaveStore {
     if (def.keyKind === 'titleId') {
       return db.get<{ id: number }>('SELECT id FROM games WHERE platform = $p AND title_id = $t', { $p: platform, $t: gameKey })?.id ?? null;
     }
+    if (def.keyKind === 'card') return null;
     // saveDir: PSP folders start with the game's serial (ULUS10336DATA00).
     return (
       db.get<{ id: number }>(
@@ -180,7 +181,7 @@ export class SaveStore {
 
 export function writeAtomic(file: string, data: Buffer): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.bonfire-${process.pid}-${Date.now()}.tmp`;
+  const tmp = `${file}.romsafe-${process.pid}-${Date.now()}.tmp`;
   fs.writeFileSync(tmp, data);
   fs.renameSync(tmp, file);
 }

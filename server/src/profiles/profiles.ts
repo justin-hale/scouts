@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import type { PlatformDef } from '../platforms.js';
+import { SAVE_FORMATS, type SaveFormat } from '../saves/formats.js';
 import { matchTemplate, normalizePath, renderTemplate, templateVars, type Vars } from './template.js';
 
 /**
@@ -17,6 +18,8 @@ export interface SaveRule {
   file?: string;
   /** Values for pattern variables that don't come from the game key (e.g. 3DS id0/id1). */
   defaults?: Vars;
+  /** Wrapper the emulator puts around the raw save, stripped on upload. */
+  format?: SaveFormat;
 }
 
 export interface Profile {
@@ -31,6 +34,10 @@ export interface Profile {
 export interface SaveKey {
   gameKey: string;
   file: string;
+}
+
+export interface ParsedSave extends SaveKey {
+  format?: SaveFormat;
 }
 
 export function loadProfiles(dir: string): Profile[] {
@@ -65,11 +72,15 @@ export function validateProfile(doc: unknown, source = 'profile'): Profile {
     if (typeof rule.pattern !== 'string') fail(`saves[${i}].pattern is required`);
     const vars = templateVars(rule.pattern as string);
     if (!vars.includes('file') && typeof rule.file !== 'string') fail(`saves[${i}] needs a {file} variable or a file name`);
+    if (rule.format !== undefined && !SAVE_FORMATS.includes(rule.format as SaveFormat)) {
+      fail(`saves[${i}].format must be one of: ${SAVE_FORMATS.join(', ')}`);
+    }
     return {
       platforms: platforms as string[],
       pattern: rule.pattern as string,
       file: rule.file as string | undefined,
       defaults: (rule.defaults as Vars | undefined) ?? undefined,
+      format: rule.format as SaveFormat | undefined,
     };
   });
   return {
@@ -100,7 +111,7 @@ export function normalizeGameKey(platform: PlatformDef, key: string): string {
 }
 
 /** Turn a device-relative save path into its canonical key, or null if the profile doesn't recognise it. */
-export function parseSavePath(profile: Profile, platform: PlatformDef, relPath: string): SaveKey | null {
+export function parseSavePath(profile: Profile, platform: PlatformDef, relPath: string): ParsedSave | null {
   const p = normalizePath(relPath);
   for (const rule of rulesFor(profile, platform)) {
     const vars = matchTemplate(rule.pattern, p);
@@ -108,7 +119,7 @@ export function parseSavePath(profile: Profile, platform: PlatformDef, relPath: 
     const gameKey = renderTemplate(platform.keyFormat, vars);
     const file = vars.file ?? rule.file;
     if (!gameKey || !file) continue;
-    return { gameKey: normalizeGameKey(platform, gameKey), file };
+    return { gameKey: normalizeGameKey(platform, gameKey), file, ...(rule.format && { format: rule.format }) };
   }
   return null;
 }

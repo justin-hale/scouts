@@ -20,11 +20,11 @@ export interface Config {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
-    port: Number(env.BONFIRE_PORT ?? 8080),
-    host: env.BONFIRE_HOST ?? '0.0.0.0',
-    dataDir: path.resolve(env.BONFIRE_DATA_DIR ?? path.join(repoRoot, 'data')),
-    profilesDir: path.resolve(env.BONFIRE_PROFILES_DIR ?? path.join(repoRoot, 'profiles')),
-    webDir: path.resolve(env.BONFIRE_WEB_DIR ?? path.join(repoRoot, 'web', 'dist')),
-    adminPassword: env.BONFIRE_ADMIN_PASSWORD || undefined,
+    port: Number(env.ROMSAFE_PORT ?? 8080),
+    host: env.ROMSAFE_HOST ?? '0.0.0.0',
+    dataDir: path.resolve(env.ROMSAFE_DATA_DIR ?? path.join(repoRoot, 'data')),
+    profilesDir: path.resolve(env.ROMSAFE_PROFILES_DIR ?? path.join(repoRoot, 'profiles')),
+    webDir: path.resolve(env.ROMSAFE_WEB_DIR ?? path.join(repoRoot, 'web', 'dist')),
+    adminPassword: env.ROMSAFE_ADMIN_PASSWORD || undefined,
   };
 }

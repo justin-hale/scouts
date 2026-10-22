@@ -1,0 +1,13 @@
+id: flycast
+name: Flycast
+description: >
+  Dreamcast VMUs, synced as whole memory units (vmu_save_A1.bin is the VMU
+  in controller A, slot 1). Pick Flycast's "data" folder; for the RetroArch
+  Flycast core with per-game VMUs off, pick RetroArch's "system/dc" folder.
+defaultPaths:
+  android: ["Flycast/data", "RetroArch/system/dc"]
+  windows: ["%APPDATA%\\flycast\\data"]
+saves:
+  - platforms: ["dreamcast"]
+    pattern: "vmu_save_{card}.bin"
+    file: vmu.bin

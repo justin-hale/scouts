@@ -8,12 +8,14 @@ import Game from './pages/Game';
 import Library from './pages/Library';
 import Login from './pages/Login';
 import Platforms from './pages/Platforms';
+import Saves from './pages/Saves';
 import Settings from './pages/Settings';
 
 type AuthState = { setupRequired: boolean; authenticated: boolean } | null;
 
 const NAV = [
   { to: '/library', label: 'Library', icon: '🎮' },
+  { to: '/saves', label: 'Saves', icon: '💾' },
   { to: '/platforms', label: 'Platforms', icon: '🗂️' },
   { to: '/devices', label: 'Devices', icon: '📱' },
   { to: '/conflicts', label: 'Conflicts', icon: '⚠️' },
@@ -29,8 +31,8 @@ export default function App() {
   useEffect(() => {
     void refreshAuth();
     const onUnauthorized = () => setAuth((a) => (a ? { ...a, authenticated: false } : a));
-    window.addEventListener('bonfire:unauthorized', onUnauthorized);
-    return () => window.removeEventListener('bonfire:unauthorized', onUnauthorized);
+    window.addEventListener('romsafe:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('romsafe:unauthorized', onUnauthorized);
   }, []);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function App() {
       <aside className="flex shrink-0 flex-row items-center gap-1 overflow-x-auto border-b border-stone-800 bg-stone-950 px-3 py-2 md:w-56 md:flex-col md:items-stretch md:border-r md:border-b-0 md:px-3 md:py-5">
         <div className="mr-3 flex items-center gap-2 px-2 md:mr-0 md:mb-6">
           <img src="/favicon.svg" alt="" className="h-7 w-7" />
-          <span className="text-lg font-semibold tracking-tight text-stone-50">Bonfire</span>
+          <span className="text-lg font-semibold tracking-tight text-stone-50">RomSafe</span>
         </div>
         {NAV.map((n) => (
           <NavLink
@@ -67,7 +69,7 @@ export default function App() {
             <span aria-hidden>{n.icon}</span>
             {n.label}
             {n.to === '/conflicts' && conflicts > 0 && (
-              <span className="ml-auto rounded-full bg-ember-600 px-1.5 text-xs font-semibold text-white">{conflicts}</span>
+              <span className="ml-auto rounded-full bg-brand-600 px-1.5 text-xs font-semibold text-white">{conflicts}</span>
             )}
           </NavLink>
         ))}
@@ -83,6 +85,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/library" replace />} />
           <Route path="/library" element={<Library />} />
           <Route path="/games/:id" element={<Game />} />
+          <Route path="/saves" element={<Saves />} />
           <Route path="/platforms" element={<Platforms />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/devices/:id" element={<DevicePage />} />

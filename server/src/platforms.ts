@@ -8,10 +8,13 @@
  *
  * - `rom`:     the game key is the ROM file name without extension. Used by
  *              cartridge systems whose emulators name saves after the ROM.
- * - `titleId`: a platform-native title ID (3DS).
+ * - `titleId`: a platform-native title ID (3DS, Wii NAND saves).
  * - `saveDir`: the emulator's own save folder name (PSP SAVEDATA dirs).
+ * - `card`:    a memory card shared by many games (GameCube, PS2, Dreamcast
+ *              VMUs). These saves are synced as whole cards and are not tied
+ *              to a single game.
  */
-export type KeyKind = 'rom' | 'titleId' | 'saveDir';
+export type KeyKind = 'rom' | 'titleId' | 'saveDir' | 'card';
 
 export interface PlatformDef {
   slug: string;
@@ -65,13 +68,42 @@ export const PLATFORMS: PlatformDef[] = [
     igdbPlatformId: 37,
     libretroName: 'Nintendo - Nintendo 3DS',
   },
-  romPlatform('gc', 'GameCube', ['.iso', '.gcm', '.rvz', '.ciso', '.gcz'], 21, 'Nintendo - GameCube', false),
-  romPlatform('wii', 'Wii', ['.iso', '.wbfs', '.rvz', '.wad', '.gcz'], 5, 'Nintendo - Wii', false),
+  {
+    slug: 'gc',
+    name: 'GameCube',
+    romExtensions: ['.iso', '.gcm', '.rvz', '.ciso', '.gcz', '.wia'],
+    keyKind: 'card',
+    // Dolphin memory cards are per region and slot ("MemoryCardA.USA.raw",
+    // or a "GC/USA/Card A" folder of .gci files).
+    keyFormat: '{region}/{slot:1}',
+    defaultSaveLayout: '{region}/Card {slot}/{file**}',
+    igdbPlatformId: 21,
+    libretroName: 'Nintendo - GameCube',
+  },
+  {
+    slug: 'wii',
+    name: 'Wii',
+    romExtensions: ['.iso', '.wbfs', '.rvz', '.wia', '.gcz', '.wad'],
+    keyKind: 'titleId',
+    keyFormat: '{category:8}{titleLow:8}',
+    defaultSaveLayout: 'title/{category}/{titleLow}/data/{file**}',
+    igdbPlatformId: 5,
+    libretroName: 'Nintendo - Wii',
+  },
   romPlatform('genesis', 'Sega Genesis / Mega Drive', ['.md', '.gen', '.bin', '.smd'], 29, 'Sega - Mega Drive - Genesis'),
   romPlatform('sms', 'Sega Master System', ['.sms'], 64, 'Sega - Master System - Mark III'),
   romPlatform('gg', 'Sega Game Gear', ['.gg'], 35, 'Sega - Game Gear'),
   romPlatform('psx', 'PlayStation', ['.cue', '.chd', '.pbp', '.m3u', '.iso'], 7, 'Sony - PlayStation', false),
-  romPlatform('ps2', 'PlayStation 2', ['.iso', '.chd', '.cso'], 8, 'Sony - PlayStation 2', false),
+  {
+    slug: 'ps2',
+    name: 'PlayStation 2',
+    romExtensions: ['.iso', '.chd', '.cso', '.zso', '.gz'],
+    keyKind: 'card',
+    keyFormat: '{card}',
+    defaultSaveLayout: '{card}/{file**}',
+    igdbPlatformId: 8,
+    libretroName: 'Sony - PlayStation 2',
+  },
   {
     slug: 'psp',
     name: 'PlayStation Portable',
@@ -81,6 +113,17 @@ export const PLATFORMS: PlatformDef[] = [
     defaultSaveLayout: 'SAVEDATA/{saveDir}/{file**}',
     igdbPlatformId: 38,
     libretroName: 'Sony - PlayStation Portable',
+  },
+  {
+    slug: 'dreamcast',
+    name: 'Dreamcast',
+    romExtensions: ['.chd', '.gdi', '.cdi', '.cue', '.m3u'],
+    keyKind: 'card',
+    // VMUs are named by controller port and slot: A1, A2, B1, ...
+    keyFormat: '{card}',
+    defaultSaveLayout: 'VMU {card}/{file**}',
+    igdbPlatformId: 23,
+    libretroName: 'Sega - Dreamcast',
   },
 ];
 

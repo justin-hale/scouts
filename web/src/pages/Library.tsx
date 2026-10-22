@@ -60,7 +60,7 @@ export default function Library() {
       {games.data && games.data.total === 0 && (
         <div className="rounded-xl border border-dashed border-stone-700 p-10 text-center text-stone-400">
           No games yet. Set ROM folders on the{' '}
-          <Link className="text-ember-400 underline" to="/platforms">
+          <Link className="text-brand-400 underline" to="/platforms">
             Platforms
           </Link>{' '}
           page, then scan your library.
@@ -77,10 +77,10 @@ export default function Library() {
                 <div className="flex h-full items-center justify-center p-3 text-center text-sm text-stone-500">{g.title}</div>
               )}
             </div>
-            <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-ember-400">{g.title}</div>
+            <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-brand-400">{g.title}</div>
             <div className="mt-1 flex flex-wrap gap-1">
               <Badge>{names.get(g.platform) ?? g.platform}</Badge>
-              {g.saveCount > 0 && <Badge tone="ember">{g.saveCount} save{g.saveCount > 1 ? 's' : ''}</Badge>}
+              {g.saveCount > 0 && <Badge tone="brand">{g.saveCount} save{g.saveCount > 1 ? 's' : ''}</Badge>}
             </div>
           </Link>
         ))}
@@ -94,7 +94,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     <button
       onClick={onClick}
       className={`rounded-full border px-3 py-1 text-xs transition ${
-        active ? 'border-ember-500 bg-ember-600/20 text-ember-400' : 'border-stone-700 text-stone-400 hover:border-stone-500'
+        active ? 'border-brand-500 bg-brand-600/20 text-brand-400' : 'border-stone-700 text-stone-400 hover:border-stone-500'
       }`}
     >
       {children}

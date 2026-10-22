@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { parseDiscHeader, wiiTitleId } from '../src/library/disc.js';
 import { cleanTitle } from '../src/library/names.js';
 import { getPlatform } from '../src/platforms.js';
 import { layoutProfile, loadProfiles, parseSavePath, renderSavePath, validateLayout } from '../src/profiles/profiles.js';
 import { matchTemplate, renderTemplate } from '../src/profiles/template.js';
+import { decodeSave } from '../src/saves/formats.js';
 
 const profiles = loadProfiles(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'profiles'));
 const profile = (id: string) => profiles.find((p) => p.id === id)!;
@@ -56,4 +58,59 @@ test('titles are cleaned from No-Intro names', () => {
   assert.equal(cleanTitle('Legend of Zelda, The - The Minish Cap (USA) [!].gba'), 'The Legend of Zelda - The Minish Cap');
   assert.equal(cleanTitle('Final Fantasy VII (USA) (Disc 1).cue'), 'Final Fantasy VII');
   assert.equal(cleanTitle('Metroid_Fusion.gba'), 'Metroid Fusion');
+});
+
+test('Dolphin GameCube cards and Wii NAND saves', () => {
+  const dolphin = profile('dolphin');
+  const gc = getPlatform('gc')!;
+  const wii = getPlatform('wii')!;
+  assert.deepEqual(parseSavePath(dolphin, gc, 'GC/MemoryCardA.USA.raw'), { gameKey: 'USA/A', file: 'card.raw' });
+  assert.deepEqual(parseSavePath(dolphin, gc, 'GC/USA/Card A/01-GALE-SuperSmashBros0110290334.gci'), {
+    gameKey: 'USA/A',
+    file: '01-GALE-SuperSmashBros0110290334.gci',
+  });
+  assert.equal(renderSavePath(dolphin, gc, { gameKey: 'EUR/B', file: 'card.raw' }), 'GC/MemoryCardB.EUR.raw');
+  assert.equal(renderSavePath(dolphin, gc, { gameKey: 'USA/A', file: 'x.gci' }), 'GC/USA/Card A/x.gci');
+  assert.equal(
+    renderSavePath(layoutProfile(gc, gc.defaultSaveLayout), gc, { gameKey: 'USA/A', file: 'card.raw' }),
+    'USA/Card A/card.raw',
+  );
+  assert.deepEqual(parseSavePath(dolphin, wii, 'Wii/title/00010000/52534245/data/banner.bin'), {
+    gameKey: '0001000052534245',
+    file: 'banner.bin',
+  });
+});
+
+test('memory card and DS wrapper profiles', () => {
+  assert.deepEqual(parseSavePath(profile('pcsx2'), getPlatform('ps2')!, 'Mcd001.ps2'), { gameKey: 'Mcd001', file: 'card.ps2' });
+  assert.deepEqual(parseSavePath(profile('flycast'), getPlatform('dreamcast')!, 'vmu_save_A1.bin'), { gameKey: 'A1', file: 'vmu.bin' });
+  assert.deepEqual(parseSavePath(profile('duckstation'), getPlatform('psx')!, 'Final Fantasy VII (USA) (Disc 1)_1.mcd'), {
+    gameKey: 'Final Fantasy VII (USA) (Disc 1)',
+    file: 'battery.sav',
+  });
+  assert.deepEqual(parseSavePath(profile('drastic'), getPlatform('nds')!, 'Pokemon - Platinum Version (USA).dsv'), {
+    gameKey: 'Pokemon - Platinum Version (USA)',
+    file: 'battery.sav',
+    format: 'desmume-dsv',
+  });
+});
+
+test('GameCube and Wii disc IDs', () => {
+  const header = (id: string, magicOffset: number, magic: number) => {
+    const h = Buffer.alloc(0x80);
+    h.write(id, 0, 'latin1');
+    h.writeUInt32BE(magic, magicOffset);
+    return h;
+  };
+  assert.deepEqual(parseDiscHeader(header('GALE01', 0x1c, 0xc2339f3d)), { system: 'gc', gameId: 'GALE01' });
+  assert.deepEqual(parseDiscHeader(header('RSBE01', 0x18, 0x5d1c9ea3)), { system: 'wii', gameId: 'RSBE01' });
+  assert.equal(parseDiscHeader(header('RSBE01', 0x18, 0x12345678)), null);
+  assert.equal(wiiTitleId('RSBE01'), '0001000052534245');
+});
+
+test('DeSmuME footers are stripped', () => {
+  const raw = Buffer.alloc(512, 7);
+  const footer = Buffer.from('|<--Snip above here to create a raw sav by excluding this DeSmuME savedata footer:\0\0\0\0|-DESMUME SAV-|');
+  assert.deepEqual(decodeSave('desmume-dsv', Buffer.concat([raw, footer])), raw);
+  assert.deepEqual(decodeSave('desmume-dsv', raw), raw);
 });

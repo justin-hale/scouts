@@ -10,7 +10,7 @@ export interface Candidate {
   coverUrl?: string;
 }
 
-const UA = 'Bonfire/0.1';
+const UA = 'RomSafe/0.1';
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'User-Agent': UA, ...init?.headers }, signal: AbortSignal.timeout(20_000) });

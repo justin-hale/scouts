@@ -1,0 +1,12 @@
+id: pcsx2
+name: PCSX2 / NetherSX2 / AetherSX2
+description: >
+  Pick the "memcards" folder. PS2 memory cards are shared by many games, so
+  each .ps2 card file syncs as a whole (Mcd001.ps2, Mcd002.ps2, ...). Use the
+  same card names on every device. Folder memory cards aren't supported yet.
+defaultPaths:
+  windows: ["%USERPROFILE%\\Documents\\PCSX2\\memcards"]
+saves:
+  - platforms: ["ps2"]
+    pattern: "{card}.ps2"
+    file: card.ps2

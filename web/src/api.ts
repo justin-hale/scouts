@@ -17,7 +17,7 @@ export async function api<T = unknown>(method: string, url: string, body?: unkno
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    if (res.status === 401) window.dispatchEvent(new Event('bonfire:unauthorized'));
+    if (res.status === 401) window.dispatchEvent(new Event('romsafe:unauthorized'));
     throw new ApiError(data?.error ?? res.statusText, res.status);
   }
   return data as T;
@@ -36,7 +36,7 @@ export const coverUrl = (file: string | null) => (file ? `/api/covers/${file}` :
 export interface Platform {
   slug: string;
   name: string;
-  keyKind: 'rom' | 'titleId' | 'saveDir';
+  keyKind: 'rom' | 'titleId' | 'saveDir' | 'card';
   romExtensions: string[];
   enabled: boolean;
   romPath: string | null;
@@ -80,17 +80,25 @@ export interface GameDetail {
     titleId: string | null;
     missing: number;
   }[];
-  saves: {
-    id: number;
-    gameKey: string;
-    file: string;
-    currentVersionId: number | null;
-    sha256: string | null;
-    size: number | null;
-    updatedAt: number | null;
-    updatedBy: string | null;
-    versionCount: number;
-  }[];
+  saves: SaveSummary[];
+}
+
+export interface SaveSummary {
+  id: number;
+  gameKey: string;
+  file: string;
+  currentVersionId: number | null;
+  sha256: string | null;
+  size: number | null;
+  updatedAt: number | null;
+  updatedBy: string | null;
+  versionCount: number;
+}
+
+export interface SaveListItem extends SaveSummary {
+  platform: string;
+  gameId: number | null;
+  gameTitle: string | null;
 }
 
 export interface SaveVersion {

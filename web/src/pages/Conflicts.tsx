@@ -21,13 +21,13 @@ export default function Conflicts({ onChange }: { onChange: (n: number) => void 
         subtitle="A save changed on a device and on the server since they last synced. Both copies are kept; pick which one becomes current. The other stays in the save's history."
       />
       <ErrorNote error={conflicts.error} />
-      {conflicts.data?.length === 0 && <Card className="p-6 text-sm text-stone-400">No conflicts. All saves are in sync. 🔥</Card>}
+      {conflicts.data?.length === 0 && <Card className="p-6 text-sm text-stone-400">No conflicts. All saves are in sync.</Card>}
       <div className="space-y-4">
         {conflicts.data?.map((c) => (
           <Card key={c.id} className="p-5">
             <div className="mb-4">
               {c.gameId ? (
-                <Link to={`/games/${c.gameId}`} className="font-semibold text-stone-100 hover:text-ember-400">
+                <Link to={`/games/${c.gameId}`} className="font-semibold text-stone-100 hover:text-brand-400">
                   {c.gameTitle}
                 </Link>
               ) : (
@@ -71,7 +71,7 @@ function Side(props: { title: string; size: number; time: number; versionId: num
         <Button variant="primary" onClick={props.onKeep}>
           Keep this one
         </Button>
-        <a className="self-center text-xs text-ember-400 hover:underline" href={`/api/save-versions/${props.versionId}/download`}>
+        <a className="self-center text-xs text-brand-400 hover:underline" href={`/api/save-versions/${props.versionId}/download`}>
           download
         </a>
       </div>

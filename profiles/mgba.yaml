@@ -1,0 +1,7 @@
+id: mgba
+name: mGBA
+description: Raw .sav files named after the ROM. mGBA keeps them next to the ROM unless a save folder is set.
+saves:
+  - platforms: ["gb", "gbc", "gba"]
+    pattern: "{game}.sav"
+    file: battery.sav

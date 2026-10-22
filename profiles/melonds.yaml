@@ -1,0 +1,9 @@
+id: melonds
+name: melonDS
+description: Raw .sav files named after the ROM. Pick melonDS's save folder (or the ROM folder if saves sit next to ROMs).
+defaultPaths:
+  android: ["melonDS/saves"]
+saves:
+  - platforms: ["nds"]
+    pattern: "{game}.sav"
+    file: battery.sav

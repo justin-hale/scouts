@@ -1,0 +1,16 @@
+id: retroarch
+name: RetroArch
+description: >
+  Battery saves (.srm) and real-time-clock files (.rtc) named after the ROM.
+  Pick RetroArch's saves folder. If "Sort saves into folders by core name" is
+  on, pick the core's folder instead (one mapping per platform).
+defaultPaths:
+  android: ["RetroArch/saves"]
+  windows: ["%APPDATA%\\RetroArch\\saves", "C:\\RetroArch-Win64\\saves"]
+saves:
+  - platforms: ["*"]
+    pattern: "{game}.srm"
+    file: battery.sav
+  - platforms: ["*"]
+    pattern: "{game}.rtc"
+    file: rtc

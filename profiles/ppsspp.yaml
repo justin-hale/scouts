@@ -1,0 +1,10 @@
+id: ppsspp
+name: PPSSPP
+description: >
+  Pick the PPSSPP memory stick folder, the one that contains "PSP"
+  (on Android this is often the root of internal storage).
+defaultPaths:
+  windows: ["%USERPROFILE%\\Documents\\PPSSPP"]
+saves:
+  - platforms: ["psp"]
+    pattern: "PSP/SAVEDATA/{saveDir}/{file**}"

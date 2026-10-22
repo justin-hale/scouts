@@ -1,0 +1,7 @@
+id: generic-sav
+name: Generic .sav files
+description: Any emulator that writes a raw battery save as "<ROM name>.sav".
+saves:
+  - platforms: ["*"]
+    pattern: "{game}.sav"
+    file: battery.sav

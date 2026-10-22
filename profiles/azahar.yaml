@@ -1,0 +1,15 @@
+id: azahar
+name: Azahar / Citra / Lime3DS
+description: >
+  Pick the emulator's "sdmc" folder, the one that contains "Nintendo 3DS".
+  Citra-family emulators use all-zero console IDs, which are filled in when
+  a save is placed on a new device.
+defaultPaths:
+  android: ["azahar-emu/sdmc", "citra-emu/sdmc", "lime3ds-emu/sdmc"]
+  windows: ["%APPDATA%\\Azahar\\sdmc", "%APPDATA%\\Citra\\sdmc"]
+saves:
+  - platforms: ["3ds"]
+    pattern: "Nintendo 3DS/{id0}/{id1}/title/{category:8}/{titleLow:8}/data/{file**}"
+    defaults:
+      id0: "00000000000000000000000000000000"
+      id1: "00000000000000000000000000000000"

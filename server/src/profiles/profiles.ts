@@ -124,11 +124,23 @@ export function parseSavePath(profile: Profile, platform: PlatformDef, relPath: 
   return null;
 }
 
-/** Render where a canonical save lives inside a device folder, or null if the profile can't place it. */
-export function renderSavePath(profile: Profile, platform: PlatformDef, key: SaveKey): string | null {
+/** The profile's rule a device path matches, if any. */
+export function ruleFor(profile: Profile, platform: PlatformDef, relPath: string): SaveRule | null {
+  const p = normalizePath(relPath);
+  return rulesFor(profile, platform).find((rule) => matchTemplate(rule.pattern, p)) ?? null;
+}
+
+/**
+ * Render where a canonical save lives inside a device folder, or null if the
+ * profile can't place it. Rules in `preferred` (the naming the device already
+ * uses, e.g. RetroArch's .sav instead of .srm) are tried first.
+ */
+export function renderSavePath(profile: Profile, platform: PlatformDef, key: SaveKey, preferred?: Set<SaveRule>): string | null {
   const keyVars = matchTemplate(platform.keyFormat, key.gameKey);
   if (!keyVars) return null;
-  for (const rule of rulesFor(profile, platform)) {
+  const rules = rulesFor(profile, platform);
+  const ordered = preferred?.size ? [...rules.filter((r) => preferred.has(r)), ...rules.filter((r) => !preferred.has(r))] : rules;
+  for (const rule of ordered) {
     const hasFileVar = templateVars(rule.pattern).includes('file');
     if (!hasFileVar && rule.file !== key.file) continue;
     const out = renderTemplate(rule.pattern, { ...rule.defaults, ...keyVars, file: key.file });

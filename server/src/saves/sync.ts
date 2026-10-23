@@ -2,7 +2,7 @@ import type { AppContext } from '../context.js';
 import { now } from '../db.js';
 import { sha256Buffer } from '../library/hash.js';
 import type { PlatformDef } from '../platforms.js';
-import { parseSavePath, renderSavePath, type ParsedSave, type Profile } from '../profiles/profiles.js';
+import { parseSavePath, renderSavePath, ruleFor, type ParsedSave, type Profile, type SaveRule } from '../profiles/profiles.js';
 import { normalizePath } from '../profiles/template.js';
 import { localStemForServer, serverStemForLocal } from '../roms/matching.js';
 import { isEmptySave } from './content.js';
@@ -94,14 +94,14 @@ export class SyncService {
   }
 
   /** Canonical key -> device path, or null when the device doesn't have the game. */
-  private toLocal(deviceId: number, def: PlatformDef, profile: Profile, save: SaveRow): string | null {
+  private toLocal(deviceId: number, def: PlatformDef, profile: Profile, save: SaveRow, preferred?: Set<SaveRule>): string | null {
     let gameKey = save.game_key;
     if (def.keyKind === 'rom') {
       const local = localStemForServer(this.ctx.db, deviceId, def.slug, gameKey);
       if (local) gameKey = local;
       else if (this.deviceHasRomInventory(deviceId, def.slug)) return null;
     }
-    return renderSavePath(profile, def, { gameKey, file: save.file });
+    return renderSavePath(profile, def, { gameKey, file: save.file }, preferred);
   }
 
   private deviceHasRomInventory(deviceId: number, platform: string): boolean {
@@ -203,14 +203,16 @@ export class SyncService {
       }
     }
 
-    // Saves the server has that the device didn't report.
+    // Saves the server has that the device didn't report, named the way this
+    // device already names its saves (RetroArch writes .srm or .sav).
+    const preferred = new Set(files.map((f) => ruleFor(profile, def, normalizePath(f.path))).filter((r): r is SaveRule => !!r));
     const remote = this.ctx.db.all<SaveRow>('SELECT * FROM saves WHERE platform = $p AND current_version_id IS NOT NULL', {
       $p: platform,
     });
     const reported = new Set(actions.map((a) => a.path.toLowerCase()));
     for (const save of remote) {
       if (handled.has(save.id) || this.openConflict(deviceId, save.id)) continue;
-      const path = this.toLocal(deviceId, def, profile, save);
+      const path = this.toLocal(deviceId, def, profile, save, preferred);
       if (!path || reported.has(path.toLowerCase())) continue;
       const current = this.store.getVersion(save.current_version_id!)!;
       actions.push({ action: 'download', path, saveId: save.id, versionId: current.id, sha256: current.sha256, size: current.size });

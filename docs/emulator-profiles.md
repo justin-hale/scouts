@@ -44,7 +44,8 @@ same save.
 
 `platforms: ["*"]` applies a rule to every ROM-keyed platform.
 
-When the server places a save on a device, it renders the **first** rule whose `file` matches.
+When the server places a save on a device, it renders the **first** rule whose `file` matches,
+preferring rules the device's own files already use (so a RetroArch that writes `.sav` gets `.sav`).
 When reading a device's files, it uses the first rule that matches the path.
 
 ## Server save layout
@@ -65,7 +66,7 @@ The 3DS default matches Citra's layout, so you can copy `~/saves/3ds` straight i
 
 | Profile | Platforms | Saves |
 | --- | --- | --- |
-| `retroarch` | all ROM-keyed (incl. psx) | `{game}.srm`, `{game}.rtc` |
+| `retroarch` | all ROM-keyed (incl. psx) | `{game}.srm` or `{game}.sav`, `{game}.rtc` |
 | `generic-sav` | all ROM-keyed | `{game}.sav` |
 | `mgba` | gb, gbc, gba | `{game}.sav` |
 | `melonds` | nds | `{game}.sav` |

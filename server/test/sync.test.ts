@@ -349,6 +349,28 @@ test('saves only belong to a ROM-keyed platform if the device has that ROM', asy
   assert.equal((await handheld.upload('gba', 'mariomon.srm', Buffer.from('mariomon progress'), null)).status, 'ok');
 });
 
+test('RetroArch .sav saves sync, and saves are placed with the extension the device uses', async () => {
+  // RetroArch's GBA core on the Thor writes "Mariomon.sav", not .srm.
+  const handheld = await srv.pairDevice('Sav Writer');
+  await handheld.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'gba', profile: 'retroarch' }] });
+  await handheld.call('POST', '/api/device/roms/inventory', {
+    platform: 'gba',
+    files: [
+      { path: 'Metroid Fusion.gba', size: 1 },
+      { path: 'Mariomon.gba', size: 1 },
+    ],
+  });
+  const actions = await plan(handheld, 'gba', { 'Mariomon.sav': Buffer.from('mariomon progress, sav') });
+  assert.deepEqual(
+    actions.map((a) => [a.path, a.action]),
+    [
+      ['Mariomon.sav', 'upload'],
+      // The server's Metroid Fusion save comes down as .sav too, matching this RetroArch.
+      ['Metroid Fusion.sav', 'download'],
+    ],
+  );
+});
+
 test('a save deleted in the GUI is not uploaded again by a device that still has it', async () => {
   const handheld = await srv.pairDevice('Tombstone Tester');
   await handheld.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'ps2', profile: 'pcsx2' }] });

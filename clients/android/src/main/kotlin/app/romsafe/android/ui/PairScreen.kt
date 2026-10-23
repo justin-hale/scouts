@@ -31,6 +31,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -66,7 +68,7 @@ fun PairScreen(state: AppState, onPair: (url: String, code: String, name: String
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.size(72.dp))
+            Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.size(88.dp).clip(RoundedCornerShape(20.dp)))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("RomSafe", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
                 Text(

@@ -1,4 +1,4 @@
-/** The RomSafe mark: a vault with a game cartridge behind its door. Same drawing as public/favicon.svg. */
+/** The RomSafe mark: a vault door. Source artwork in docs/brand/romsafe-logo.webp. */
 export function Logo({ className = 'h-8 w-8' }: { className?: string }) {
-  return <img src="/favicon.svg" alt="RomSafe" className={className} />;
+  return <img src="/logo.png" alt="RomSafe" className={`rounded-[22%] ${className}`} />;
 }

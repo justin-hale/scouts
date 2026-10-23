@@ -21,6 +21,23 @@ interface FileTree {
      * written file's entry.
      */
     suspend fun write(path: String, bytes: ByteArray): FileEntry
+
+    /** The entry at [path], or null if there's nothing there. */
+    suspend fun stat(path: String): FileEntry?
+
+    /** Opens [path] for writing in pieces (large downloads), creating parent folders. */
+    suspend fun openSink(path: String, append: Boolean): FileSink
+
+    /** Moves [from] to [to] in the same folder, replacing what's there. */
+    suspend fun replace(from: String, to: String)
+
+    suspend fun delete(path: String)
+}
+
+interface FileSink {
+    suspend fun write(bytes: ByteArray, offset: Int, length: Int)
+
+    suspend fun close()
 }
 
 /** Every file under [dir] whose folders [descend] accepts, depth first. */

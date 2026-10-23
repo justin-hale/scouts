@@ -21,7 +21,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** An in-memory tree; folders are implied by file paths. */
-private class MemoryTree(val files: MutableMap<String, Pair<ByteArray, Long>>) : FileTree {
+internal class MemoryTree(val files: MutableMap<String, Pair<ByteArray, Long>>) : FileTree {
     val reads = mutableListOf<String>()
 
     override suspend fun list(dir: String): List<FileEntry> {
@@ -40,6 +40,28 @@ private class MemoryTree(val files: MutableMap<String, Pair<ByteArray, Long>>) :
     override suspend fun write(path: String, bytes: ByteArray): FileEntry {
         files[path] = bytes to 1_000
         return FileEntry(path, bytes.size.toLong(), 1_000, false)
+    }
+
+    override suspend fun stat(path: String): FileEntry? =
+        files[path]?.let { (bytes, mtime) -> FileEntry(path, bytes.size.toLong(), mtime, false) }
+
+    override suspend fun openSink(path: String, append: Boolean): FileSink {
+        if (!append) files[path] = ByteArray(0) to 1_000
+        return object : FileSink {
+            override suspend fun write(bytes: ByteArray, offset: Int, length: Int) {
+                files[path] = (files.getValue(path).first + bytes.copyOfRange(offset, offset + length)) to 1_000
+            }
+
+            override suspend fun close() {}
+        }
+    }
+
+    override suspend fun replace(from: String, to: String) {
+        files[to] = files.remove(from)!!
+    }
+
+    override suspend fun delete(path: String) {
+        files.remove(path)
     }
 }
 

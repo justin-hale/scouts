@@ -30,6 +30,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

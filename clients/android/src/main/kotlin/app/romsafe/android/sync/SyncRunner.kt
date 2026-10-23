@@ -127,6 +127,8 @@ object SyncRunner {
                         issues = r.issues.map { i -> listOfNotNull(i.path?.substringAfterLast('/'), i.message).joinToString(": ") },
                     )
                 }
+                // ROMs queued from the web app download after the sync.
+                if (runCatching { api.queue().isNotEmpty() }.getOrDefault(false)) Downloads.start(ctx)
                 SyncReport(System.currentTimeMillis(), summaries)
             }
         } catch (e: CancellationException) {

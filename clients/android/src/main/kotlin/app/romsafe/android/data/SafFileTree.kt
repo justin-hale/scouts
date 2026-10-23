@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import app.romsafe.shared.sync.FileEntry
+import app.romsafe.shared.sync.FileSink
 import app.romsafe.shared.sync.FileTree
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,6 +68,51 @@ class SafFileTree(context: Context, private val treeUri: Uri) : FileTree {
         val id = DocumentsContract.getDocumentId(finalUri)
         ids[target.lowercase()] = id to target
         entry(id, target) ?: FileEntry(target, bytes.size.toLong(), System.currentTimeMillis(), false)
+    }
+
+    override suspend fun stat(path: String): FileEntry? = withContext(Dispatchers.IO) {
+        val (id, real) = resolve(path) ?: return@withContext null
+        entry(id, real)
+    }
+
+    override suspend fun openSink(path: String, append: Boolean): FileSink = withContext(Dispatchers.IO) {
+        val name = path.substringAfterLast('/')
+        val (parentId, realParent) = ensureDir(path.substringBeforeLast('/', ""))
+        val target = join(realParent, name)
+        val id = resolve(target)?.first ?: run {
+            val uri = DocumentsContract.createDocument(resolver, docUri(parentId), "application/octet-stream", name)
+                ?: error("Can't create $path")
+            DocumentsContract.getDocumentId(uri).also { ids[target.lowercase()] = it to target }
+        }
+        val out = resolver.openOutputStream(docUri(id), if (append) "wa" else "wt") ?: error("Can't write $path")
+        object : FileSink {
+            override suspend fun write(bytes: ByteArray, offset: Int, length: Int) =
+                withContext(Dispatchers.IO) { out.write(bytes, offset, length) }
+
+            override suspend fun close() = withContext(Dispatchers.IO) { out.close() }
+        }
+    }
+
+    override suspend fun replace(from: String, to: String) = withContext(Dispatchers.IO) {
+        val (fromId, realFrom) = resolve(from) ?: error("$from is gone")
+        val dir = realFrom.substringBeforeLast('/', "")
+        val name = to.substringAfterLast('/')
+        resolve(join(dir, name))?.let { (id, _) -> DocumentsContract.deleteDocument(resolver, docUri(id)) }
+        val renamed = runCatching { DocumentsContract.renameDocument(resolver, docUri(fromId), name) }.getOrNull()
+        if (renamed == null) {
+            // No rename support: copy, then drop the original.
+            val uri = DocumentsContract.createDocument(resolver, docUri(resolve(dir)!!.first), "application/octet-stream", name)
+                ?: error("Can't create $to")
+            resolver.openInputStream(docUri(fromId))!!.use { input -> resolver.openOutputStream(uri, "wt")!!.use { input.copyTo(it) } }
+            DocumentsContract.deleteDocument(resolver, docUri(fromId))
+        }
+        forgetChildren(dir)
+    }
+
+    override suspend fun delete(path: String) = withContext(Dispatchers.IO) {
+        val (id, real) = resolve(path) ?: return@withContext
+        DocumentsContract.deleteDocument(resolver, docUri(id))
+        forgetChildren(real.substringBeforeLast('/', ""))
     }
 
     private fun resolve(path: String): Pair<String, String>? {

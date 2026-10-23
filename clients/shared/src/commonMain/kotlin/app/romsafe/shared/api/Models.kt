@@ -103,7 +103,35 @@ data class QueuedRom(
     val fileName: String,
     val size: Long,
     val sha1: String? = null,
+    /** The ROM plus its companion files, for sets that download as one zip. */
+    val totalSize: Long? = null,
+    /** Downloads as a zip of the ROM and its companion files (.cue + .bin tracks, .m3u + discs). */
+    val multiFile: Boolean = false,
     val url: String,
+)
+
+/** A game in the server library with its ROMs, from GET /api/device/games. */
+@Serializable
+data class LibraryGame(
+    val id: Long,
+    val title: String,
+    val releaseDate: String? = null,
+    /** File name under /api/covers/, cached by the server. */
+    val cover: String? = null,
+    val roms: List<LibraryRom> = emptyList(),
+)
+
+@Serializable
+data class LibraryRom(
+    val id: Long,
+    val fileName: String,
+    val relPath: String,
+    /** Download size: the whole set for multi-file ROMs. */
+    val size: Long,
+    val multiFile: Boolean = false,
+    /** Where this device has it, or null. */
+    val localPath: String? = null,
+    val queued: Boolean = false,
 )
 
 @Serializable

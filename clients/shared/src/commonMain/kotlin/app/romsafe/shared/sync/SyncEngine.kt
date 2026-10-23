@@ -76,7 +76,8 @@ class SyncEngine(
         return result
     }
 
-    private suspend fun reportRoms(platform: PlatformInfo, tree: FileTree, scope: String): Int {
+    /** Sends the ROM inventory for [platform] (complete); returns how many ROMs it listed. */
+    suspend fun reportRoms(platform: PlatformInfo, tree: FileTree, scope: String): Int {
         val extensions = platform.romExtensions.map { it.lowercase() }
         // ROMs sit in the folder or one level down (per-game folders for multi-disc sets).
         val files = tree.walk { dir -> dir.count { it == '/' } < 1 }
@@ -100,7 +101,8 @@ class SyncEngine(
         var r = before
         val slug = platform.slug
         val matcher = SaveMatcher(SaveLayout.rules(folder.profile, platform))
-        val files = folder.tree.walk(descend = matcher::mayContain).filter { matcher.matches(it.path) }
+        val files = folder.tree.walk(descend = matcher::mayContain)
+            .filter { matcher.matches(it.path) && !it.name.endsWith(".romsafe-tmp") && !it.name.endsWith(".romsafe-part") }
         val hashScope = "sha256:${folder.scope}"
         cache.retain(hashScope, files.mapTo(mutableSetOf()) { it.path })
 

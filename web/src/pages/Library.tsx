@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { coverUrl, get, type GameSummary, type Platform } from '../api';
-import { faCloudArrowUp, Icon } from '../components/icons';
+import { faCloudArrowUp, faFloppyDisk, Icon } from '../components/icons';
 import { JobButton, startScan, startScrape } from '../components/jobs';
-import { Badge, Button, ErrorNote, Input, PageHeader, useApi } from '../components/ui';
+import { PlatformLogo } from '../components/PlatformLogo';
+import { Button, ErrorNote, Input, PageHeader, useApi } from '../components/ui';
 import { RomUpload } from '../components/uploads';
 
 export default function Library() {
@@ -76,18 +77,27 @@ export default function Library() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
         {games.data?.items.map((g) => (
           <Link key={g.id} to={`/games/${g.id}`} className="group">
-            <div className="aspect-[3/4] overflow-hidden rounded-lg border border-stone-800 bg-stone-900">
+            <div className="relative aspect-[3/4] overflow-hidden rounded-lg border border-stone-800 bg-stone-900">
               {g.cover ? (
                 <img src={coverUrl(g.cover)!} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
               ) : (
-                <div className="flex h-full items-center justify-center p-3 text-center text-sm text-stone-500">{g.title}</div>
+                <div className="flex h-full items-center justify-center p-3 pb-12 text-center text-sm text-stone-500">{g.title}</div>
               )}
+              {/* Darken the bottom of the art so the platform logo and save marker read on any cover. */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-2/5 items-end justify-between gap-2 bg-gradient-to-b from-transparent via-black/40 to-black/90 px-2.5 pb-2">
+                <PlatformLogo slug={g.platform} name={names.get(g.platform) ?? g.platform} className="max-w-[65%] min-w-0" />
+                {g.saveCount > 0 && (
+                  <span
+                    className="flex shrink-0 items-center gap-1 text-base text-brand-400 drop-shadow"
+                    title={`${g.saveCount} save${g.saveCount > 1 ? 's' : ''}`}
+                  >
+                    <Icon icon={faFloppyDisk} />
+                    {g.saveCount > 1 && <span className="text-xs font-semibold text-stone-100">{g.saveCount}</span>}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-brand-400">{g.title}</div>
-            <div className="mt-1 flex flex-wrap gap-1">
-              <Badge>{names.get(g.platform) ?? g.platform}</Badge>
-              {g.saveCount > 0 && <Badge tone="brand">{g.saveCount} save{g.saveCount > 1 ? 's' : ''}</Badge>}
-            </div>
           </Link>
         ))}
       </div>

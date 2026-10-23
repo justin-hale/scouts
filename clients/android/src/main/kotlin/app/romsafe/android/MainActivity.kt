@@ -35,7 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
@@ -114,7 +113,7 @@ private fun Home(state: AppState, vm: AppViewModel) {
         Row(Modifier.fillMaxSize()) {
             NavigationRail(
                 containerColor = Stone.s950,
-                header = { Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.padding(top = 8.dp).size(40.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(9.dp))) },
+                header = { Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.padding(top = 8.dp).size(40.dp)) },
             ) {
                 NavigationRailItem(
                     selected = tab == Tab.Library,

@@ -123,7 +123,7 @@ fun PlatformsScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.size(32.dp).clip(RoundedCornerShape(7.dp)))
+                        Image(painterResource(R.drawable.logo), contentDescription = null, Modifier.size(32.dp))
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text("RomSafe", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

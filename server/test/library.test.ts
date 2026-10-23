@@ -104,6 +104,13 @@ test('Game Boy games in the GBC folder are indexed', async () => {
   assert.equal(rows("SELECT id FROM roms WHERE platform = 'gbc'").length, 2);
 });
 
+test('the game list is sorted by platform (catalog order), then title', async () => {
+  const { body } = await srv.admin('GET', '/api/games');
+  const order = body.items.map((g: { platform: string; title: string }) => `${g.platform}:${g.title}`);
+  // GBC comes before PlayStation in the catalog; titles are A-Z within each.
+  assert.deepEqual(order, ['gbc:Pokemon Crystal', 'gbc:Tetris', 'psx:Final Fantasy 9', 'psx:Game A', 'psx:Loose']);
+});
+
 test('zipped 3DS and GameCube ROMs get title IDs, and GCI saves link to their game', async () => {
   write('roms/3ds/Some Game (USA).zip', zip('Some Game (USA).3ds', ncsd(0x000400000008d300n)));
   await scan('3ds');

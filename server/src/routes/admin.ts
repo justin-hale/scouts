@@ -5,6 +5,7 @@ import type { Services } from '../app.js';
 import { requireAdmin, requireAdminOrDevice } from '../auth.js';
 import { now } from '../db.js';
 import type { Candidate } from '../metadata/providers.js';
+import { PLATFORMS } from '../platforms.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
 import { zipStream } from '../library/zip.js';
@@ -21,6 +22,9 @@ const int = (v: unknown): number => {
 };
 
 const notFound = (reply: FastifyReply, what = 'Not found') => reply.code(404).send({ error: what });
+
+// Games list by platform in catalog order (the order of the GUI's platform chips), then by title.
+const PLATFORM_ORDER = `CASE g.platform ${PLATFORMS.map((p, i) => `WHEN '${p.slug}' THEN ${i}`).join(' ')} ELSE ${PLATFORMS.length} END`;
 
 export const adminRoutes =
   ({ ctx, sync, scanner, metadata }: Services): FastifyPluginAsync =>
@@ -173,7 +177,7 @@ export const adminRoutes =
           `SELECT g.id, g.platform, g.title, g.release_date AS releaseDate, g.cover_file AS cover,
              (SELECT count(*) FROM roms r WHERE r.game_id = g.id AND r.missing = 0) AS romCount,
              (SELECT count(*) FROM saves s WHERE s.game_id = g.id AND s.current_version_id IS NOT NULL) AS saveCount
-           FROM games g WHERE ${where.join(' AND ')} ORDER BY g.title COLLATE NOCASE LIMIT $limit OFFSET $offset`,
+           FROM games g WHERE ${where.join(' AND ')} ORDER BY ${PLATFORM_ORDER}, g.title COLLATE NOCASE LIMIT $limit OFFSET $offset`,
           { ...params, $limit: limit, $offset: offset },
         );
         return { items, total };

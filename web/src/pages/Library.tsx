@@ -74,33 +74,23 @@ export default function Library() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
-        {games.data?.items.map((g) => (
-          <Link key={g.id} to={`/games/${g.id}`} className="group">
-            <div className="relative aspect-[3/4] overflow-hidden rounded-lg border border-stone-800 bg-stone-900">
-              {g.cover ? (
-                <img src={coverUrl(g.cover)!} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
-              ) : (
-                <div className="flex h-full items-center justify-center p-3 pb-12 text-center text-sm text-stone-500">{g.title}</div>
-              )}
-              {/* Darken the bottom of the art so the platform logo and save marker read on any cover. */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-2/5 items-end justify-between gap-2 bg-gradient-to-b from-transparent via-black/40 to-black/90 px-2.5 pb-2">
-                <PlatformLogo slug={g.platform} name={names.get(g.platform) ?? g.platform} className="max-w-[65%] min-w-0" />
-                {g.saveCount > 0 && (
-                  <span
-                    className="flex shrink-0 items-center gap-1 text-base text-brand-400 drop-shadow"
-                    title={`${g.saveCount} save${g.saveCount > 1 ? 's' : ''}`}
-                  >
-                    <Icon icon={faFloppyDisk} />
-                    {g.saveCount > 1 && <span className="text-xs font-semibold text-stone-100">{g.saveCount}</span>}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-brand-400">{g.title}</div>
-          </Link>
-        ))}
-      </div>
+      {/* The server sorts by platform, then title; in the All view each platform gets a heading. */}
+      {groupByPlatform(games.data?.items ?? []).map(([slug, list]) => (
+        <section key={slug} className="mb-10">
+          {!platform && (
+            <h2 className="mb-4 flex items-center gap-3 border-b border-stone-800 pb-2">
+              <PlatformLogo slug={slug} name={names.get(slug) ?? slug} className="max-w-48" />
+              <span className="text-sm text-stone-400">{names.get(slug) ?? slug}</span>
+              <span className="text-xs text-stone-600">{list.length}</span>
+            </h2>
+          )}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7">
+            {list.map((g) => (
+              <GameTile key={g.id} game={g} platformName={names.get(g.platform) ?? g.platform} />
+            ))}
+          </div>
+        </section>
+      ))}
 
       {uploading && platforms.data && (
         <RomUpload
@@ -112,6 +102,41 @@ export default function Library() {
         />
       )}
     </>
+  );
+}
+
+function groupByPlatform(items: GameSummary[]): [string, GameSummary[]][] {
+  const groups: [string, GameSummary[]][] = [];
+  for (const g of items) {
+    const last = groups[groups.length - 1];
+    if (last?.[0] === g.platform) last[1].push(g);
+    else groups.push([g.platform, [g]]);
+  }
+  return groups;
+}
+
+function GameTile({ game: g, platformName }: { game: GameSummary; platformName: string }) {
+  return (
+    <Link to={`/games/${g.id}`} className="group">
+      <div className="relative aspect-[3/4] overflow-hidden rounded-lg border border-stone-800 bg-stone-900">
+        {g.cover ? (
+          <img src={coverUrl(g.cover)!} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
+        ) : (
+          <div className="flex h-full items-center justify-center p-3 pb-12 text-center text-sm text-stone-500">{g.title}</div>
+        )}
+        {/* Darken the bottom of the art so the platform logo and save marker read on any cover. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-2/5 items-end justify-between gap-2 bg-gradient-to-b from-transparent via-black/40 to-black/90 px-2.5 pb-2">
+          <PlatformLogo slug={g.platform} name={platformName} className="max-w-[65%] min-w-0" />
+          {g.saveCount > 0 && (
+            <span className="flex shrink-0 items-center gap-1 text-base text-brand-400 drop-shadow" title={`${g.saveCount} save${g.saveCount > 1 ? 's' : ''}`}>
+              <Icon icon={faFloppyDisk} />
+              {g.saveCount > 1 && <span className="text-xs font-semibold text-stone-100">{g.saveCount}</span>}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-brand-400">{g.title}</div>
+    </Link>
   );
 }
 

@@ -234,6 +234,39 @@ const migrations: string[] = [
   ALTER TABLE roms ADD COLUMN parts TEXT;
   ALTER TABLE roms ADD COLUMN total_size INTEGER;
   `,
+  `
+  -- Several emulators for one platform on one device (e.g. Azahar and Citra
+  -- MMJ for 3DS), each with its own save folder. A slot names one of them;
+  -- '' is the first. Each slot syncs as a separate copy, so its sync state is
+  -- kept per slot too.
+  CREATE TABLE device_mappings_v2 (
+    device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    platform  TEXT NOT NULL,
+    slot      TEXT NOT NULL DEFAULT '',
+    profile   TEXT NOT NULL,
+    save_root TEXT,
+    rom_root  TEXT,
+    PRIMARY KEY (device_id, platform, slot)
+  );
+  INSERT INTO device_mappings_v2 (device_id, platform, profile, save_root, rom_root)
+    SELECT device_id, platform, profile, save_root, rom_root FROM device_mappings;
+  DROP TABLE device_mappings;
+  ALTER TABLE device_mappings_v2 RENAME TO device_mappings;
+
+  CREATE TABLE device_save_state_v2 (
+    device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    save_id    INTEGER NOT NULL REFERENCES saves(id) ON DELETE CASCADE,
+    slot       TEXT NOT NULL DEFAULT '',
+    version_id INTEGER NOT NULL,
+    sha256     TEXT NOT NULL,
+    synced_at  INTEGER NOT NULL,
+    PRIMARY KEY (device_id, save_id, slot)
+  );
+  INSERT INTO device_save_state_v2 (device_id, save_id, version_id, sha256, synced_at)
+    SELECT device_id, save_id, version_id, sha256, synced_at FROM device_save_state;
+  DROP TABLE device_save_state;
+  ALTER TABLE device_save_state_v2 RENAME TO device_save_state;
+  `,
 ];
 
 function migrate(db: Db): void {

@@ -85,13 +85,17 @@ export default function DevicePage() {
             {d.mappings.map((m) => {
               const roms = d.romSummary.find((r) => r.platform === m.platform);
               return (
-                <tr key={m.platform} className="border-t border-stone-800">
+                <tr key={`${m.platform}/${m.slot}`} className="border-t border-stone-800">
                   <td className="px-4 py-2">{platformNames.get(m.platform) ?? m.platform}</td>
                   <td className="px-4 py-2">
                     <Badge tone="brand">{m.profile}</Badge>
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs break-all text-stone-400">{m.saveRoot ?? '—'}</td>
-                  <td className="px-4 py-2 font-mono text-xs break-all text-stone-400">{m.romRoot ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs break-all text-stone-400" title={m.saveRoot ?? undefined}>
+                    {folderLabel(m.saveRoot)}
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs break-all text-stone-400" title={m.romRoot ?? undefined}>
+                    {folderLabel(m.romRoot)}
+                  </td>
                   <td className="px-4 py-2 whitespace-nowrap">{roms ? `${roms.matched}/${roms.files} matched` : '—'}</td>
                 </tr>
               );
@@ -117,6 +121,25 @@ export default function DevicePage() {
       {selected ? <RomTable deviceId={id} platform={selected} /> : <p className="text-sm text-stone-500">Scan a ROM folder first.</p>}
     </>
   );
+}
+
+/**
+ * Android reports SAF tree URIs (content://…/tree/primary%3ARetroArch%2Fsaves).
+ * Show them the way the app does: "Internal storage/RetroArch/saves".
+ */
+function folderLabel(root: string | null): string {
+  if (!root) return '—';
+  const m = /^content:\/\/([^/]+)\/tree\/([^/]+)/.exec(root);
+  if (!m) return root;
+  const [, authority, encoded] = m;
+  const docId = decodeURIComponent(encoded!);
+  if (authority === 'com.android.externalstorage.documents') {
+    const [volume, ...rest] = docId.split(':');
+    const path = rest.join(':');
+    const base = volume === 'primary' ? 'Internal storage' : 'SD card';
+    return path ? `${base}/${path}` : base;
+  }
+  return `${authority}: ${docId}`;
 }
 
 function RomTable({ deviceId, platform }: { deviceId: number; platform: string }) {

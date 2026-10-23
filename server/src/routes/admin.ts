@@ -423,7 +423,7 @@ export const adminRoutes =
         });
         if (!device) return notFound(reply);
         const mappings = db.all(
-          'SELECT platform, profile, save_root AS saveRoot, rom_root AS romRoot FROM device_mappings WHERE device_id = $id ORDER BY platform',
+          'SELECT platform, slot, profile, save_root AS saveRoot, rom_root AS romRoot FROM device_mappings WHERE device_id = $id ORDER BY platform, slot',
           { $id: id },
         );
         const romSummary = db.all(

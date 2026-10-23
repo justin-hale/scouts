@@ -184,7 +184,7 @@ export interface DeviceDetail {
   kind: string;
   createdAt: number;
   lastSeenAt: number | null;
-  mappings: { platform: string; profile: string; saveRoot: string | null; romRoot: string | null }[];
+  mappings: { platform: string; slot: string; profile: string; saveRoot: string | null; romRoot: string | null }[];
   romSummary: { platform: string; files: number; matched: number }[];
 }
 

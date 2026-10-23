@@ -34,6 +34,16 @@ PUT /api/device/mappings
 `saveRoot` and `romRoot` are informational (shown in the GUI). The device keeps its own folder
 handles.
 
+A device can use more than one emulator for a platform (Azahar and Citra MMJ for 3DS, say), each
+with its own save folder. Send one mapping per emulator with a different `slot`, a short string
+the client picks; leave it out (or `""`) for the first. Each slot syncs as its own copy, with its
+own last-agreed versions, so pass the same `slot` to plan, upload and ack:
+
+```http
+{ "mappings": [ { "platform": "3ds", "profile": "azahar", "saveRoot": "…azahar-emu/sdmc" },
+                { "platform": "3ds", "slot": "2", "profile": "azahar", "saveRoot": "…citra-emu/sdmc" } ] }
+```
+
 ## ROMs
 
 Report what is in each ROM folder (send `complete: true` to replace the previous list). `sha1` is
@@ -80,7 +90,7 @@ hashes:
 
 ```http
 POST /api/device/saves/plan
-{ "platform": "gba", "files": [ { "path": "Metroid Fusion.srm", "sha256": "…", "size": 8192 } ] }
+{ "platform": "gba", "slot": "", "files": [ { "path": "Metroid Fusion.srm", "sha256": "…", "size": 8192 } ] }
 → { "actions": [ … ] }
 ```
 
@@ -98,7 +108,7 @@ Download actions can also name files the device doesn't have yet. Create parent 
 ### 2. Upload
 
 ```http
-PUT /api/device/saves/upload?platform=gba&path=Metroid%20Fusion.srm&base=41[&conflict=1]
+PUT /api/device/saves/upload?platform=gba&path=Metroid%20Fusion.srm&base=41[&conflict=1][&slot=2]
 Content-Type: application/octet-stream
 <bytes>
 → { "status": "ok" | "conflict", "saveId": 7, "versionId": 42, "conflictId"?: 3 }
@@ -111,7 +121,7 @@ opened (`status: "conflict"`). Uploads are never lost.
 
 ```http
 GET  /api/save-versions/{versionId}/download   (X-Save-Sha256 header)
-POST /api/device/saves/ack { "saveId": 7, "versionId": 42 }
+POST /api/device/saves/ack { "saveId": 7, "versionId": 42, "slot": "" }
 ```
 
 Write to a temp file in the same folder and rename it over the target, so the emulator never

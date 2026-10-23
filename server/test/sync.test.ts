@@ -207,3 +207,80 @@ test('PS2 memory cards sync as whole cards', async () => {
   assert.equal(list.body[0].gameId, null);
   assert.equal(list.body[0].gameKey, 'Mcd001');
 });
+
+test('two emulators for one platform on one device sync as separate slots', async () => {
+  // Azahar and Citra MMJ on the same handheld, each with its own sdmc folder.
+  const handheld = await srv.pairDevice('Handheld');
+  const put = await handheld.call('PUT', '/api/device/mappings', {
+    mappings: [
+      { platform: '3ds', profile: 'azahar', saveRoot: 'azahar-emu/sdmc' },
+      { platform: '3ds', slot: '2', profile: 'azahar', saveRoot: 'citra-emu/sdmc' },
+    ],
+  });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  const config = await handheld.call('GET', '/api/device/config');
+  assert.deepEqual(
+    config.body.mappings.map((m: any) => [m.platform, m.slot, m.saveRoot]),
+    [
+      ['3ds', '', 'azahar-emu/sdmc'],
+      ['3ds', '2', 'citra-emu/sdmc'],
+    ],
+  );
+  const dupe = await handheld.call('PUT', '/api/device/mappings', {
+    mappings: [
+      { platform: '3ds', slot: '2', profile: 'azahar' },
+      { platform: '3ds', slot: '2', profile: 'azahar' },
+    ],
+  });
+  assert.equal(dupe.status, 400);
+  await handheld.call('PUT', '/api/device/mappings', {
+    mappings: [
+      { platform: '3ds', profile: 'azahar' },
+      { platform: '3ds', slot: '2', profile: 'azahar' },
+    ],
+  });
+
+  const rel = 'Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000/title/00040000/00055d00/data/00000001/main';
+  const planSlot = async (slot: string, files: Record<string, Buffer>) => {
+    const res = await handheld.call('POST', '/api/device/saves/plan', {
+      platform: '3ds',
+      slot,
+      files: Object.entries(files).map(([p, data]) => ({ path: p, sha256: sha256(data), size: data.length })),
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.actions as any[];
+  };
+  const ack = (slot: string, a: any) => handheld.call('POST', '/api/device/saves/ack', { slot, saveId: a.saveId, versionId: a.versionId });
+
+  // Both folders start with the server's copy.
+  const serverCopy = await handheld.download((await planSlot('', {}))[0].versionId);
+  for (const slot of ['', '2']) {
+    const [a] = await planSlot(slot, {});
+    assert.equal(a.action, 'download');
+    await ack(slot, a);
+  }
+
+  // Played in Citra MMJ (slot 2): it uploads, and Azahar's folder is told to
+  // download, not flagged as a conflict, because slot '' never changed.
+  const played = Buffer.from('progress made in citra mmj');
+  let actions = await planSlot('2', { [rel]: played });
+  assert.equal(actions[0].action, 'upload');
+  const res = await srv.app.inject({
+    method: 'PUT',
+    url: `/api/device/saves/upload?platform=3ds&slot=2&path=${encodeURIComponent(rel)}&base=${actions[0].baseVersionId}`,
+    headers: { ...handheld.headers, 'content-type': 'application/octet-stream' },
+    payload: played,
+  });
+  assert.equal(res.json().status, 'ok');
+
+  actions = await planSlot('', { [rel]: serverCopy });
+  assert.equal(actions[0].action, 'download');
+  assert.equal((await handheld.download(actions[0].versionId)).toString(), 'progress made in citra mmj');
+  await ack('', actions[0]);
+  assert.equal((await planSlot('', { [rel]: played }))[0].action, 'ok');
+  assert.equal((await planSlot('2', { [rel]: played }))[0].action, 'ok');
+
+  // A slot the device never mapped is rejected.
+  const unknown = await handheld.call('POST', '/api/device/saves/plan', { platform: '3ds', slot: '9', files: [] });
+  assert.equal(unknown.status, 400);
+});

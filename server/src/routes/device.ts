@@ -9,6 +9,8 @@ import type { LocalSave } from '../saves/sync.js';
 
 interface MappingBody {
   platform: string;
+  /** Which of the device's emulators for this platform; '' (the default) is the first. */
+  slot?: string;
   profile: string;
   saveRoot?: string | null;
   romRoot?: string | null;
@@ -47,7 +49,7 @@ export const deviceRoutes =
             })),
           profiles: ctx.profiles,
           mappings: db.all(
-            'SELECT platform, profile, save_root AS saveRoot, rom_root AS romRoot FROM device_mappings WHERE device_id = $d',
+            'SELECT platform, slot, profile, save_root AS saveRoot, rom_root AS romRoot FROM device_mappings WHERE device_id = $d ORDER BY platform, slot',
             { $d: deviceId },
           ),
         };
@@ -56,7 +58,13 @@ export const deviceRoutes =
       /** Replace the device's folder mappings. */
       dev.put<{ Body: { mappings: MappingBody[] } }>('/mappings', async (req, reply) => {
         const mappings = req.body?.mappings ?? [];
+        const seen = new Set<string>();
         for (const m of mappings) {
+          m.slot = String(m.slot ?? '').trim();
+          if (m.slot.length > 32) return reply.code(400).send({ error: 'slot is too long' });
+          const id = `${m.platform}/${m.slot}`;
+          if (seen.has(id)) return reply.code(400).send({ error: `Duplicate mapping for ${m.platform} slot "${m.slot}"` });
+          seen.add(id);
           const pc = ctx.platform(m.platform);
           const profile = ctx.profile(m.profile);
           if (!pc || !profile) return reply.code(400).send({ error: `Unknown platform or profile: ${m.platform}/${m.profile}` });
@@ -69,8 +77,8 @@ export const deviceRoutes =
           db.run('DELETE FROM device_mappings WHERE device_id = $d', { $d: deviceId });
           for (const m of mappings) {
             db.run(
-              'INSERT INTO device_mappings (device_id, platform, profile, save_root, rom_root) VALUES ($d, $p, $pr, $s, $r)',
-              { $d: deviceId, $p: m.platform, $pr: m.profile, $s: m.saveRoot ?? null, $r: m.romRoot ?? null },
+              'INSERT INTO device_mappings (device_id, platform, slot, profile, save_root, rom_root) VALUES ($d, $p, $slot, $pr, $s, $r)',
+              { $d: deviceId, $p: m.platform, $slot: m.slot ?? '', $pr: m.profile, $s: m.saveRoot ?? null, $r: m.romRoot ?? null },
             );
           }
         });
@@ -134,30 +142,38 @@ export const deviceRoutes =
 
       // --- saves ----------------------------------------------------------------
 
-      dev.post<{ Body: { platform: string; files: LocalSave[] } }>('/saves/plan', async (req, reply) => {
-        const { platform, files } = req.body ?? ({} as never);
+      dev.post<{ Body: { platform: string; slot?: string; files: LocalSave[] } }>('/saves/plan', async (req, reply) => {
+        const { platform, slot = '', files } = req.body ?? ({} as never);
         if (!Array.isArray(files)) return reply.code(400).send({ error: 'files must be a list' });
         for (const f of files) {
           if (!isSafeRelative(normalizePath(String(f.path))) || !/^[0-9a-f]{64}$/i.test(String(f.sha256))) {
             return reply.code(400).send({ error: `Bad file entry: ${JSON.stringify(f)}` });
           }
         }
-        return { actions: sync.plan(req.device!.id, platform, files) };
+        return { actions: sync.plan(req.device!.id, platform, files, slot) };
       });
 
-      dev.put<{ Querystring: { platform: string; path: string; base?: string; conflict?: string }; Body: Buffer }>(
+      dev.put<{ Querystring: { platform: string; slot?: string; path: string; base?: string; conflict?: string }; Body: Buffer }>(
         '/saves/upload',
         async (req, reply) => {
-          const { platform, path, base, conflict } = req.query;
+          const { platform, slot = '', path, base, conflict } = req.query;
           if (!Buffer.isBuffer(req.body)) return reply.code(415).send({ error: 'Send the file as application/octet-stream' });
           if (!path || !isSafeRelative(normalizePath(path))) return reply.code(400).send({ error: 'Bad path' });
           const baseVersionId = base ? Number(base) : null;
-          return sync.upload(req.device!.id, platform, normalizePath(path), req.body, baseVersionId, conflict === '1' || conflict === 'true');
+          return sync.upload(
+            req.device!.id,
+            platform,
+            normalizePath(path),
+            req.body,
+            baseVersionId,
+            conflict === '1' || conflict === 'true',
+            slot,
+          );
         },
       );
 
-      dev.post<{ Body: { saveId: number; versionId: number } }>('/saves/ack', async (req) => {
-        sync.ack(req.device!.id, Number(req.body?.saveId), Number(req.body?.versionId));
+      dev.post<{ Body: { saveId: number; versionId: number; slot?: string } }>('/saves/ack', async (req) => {
+        sync.ack(req.device!.id, Number(req.body?.saveId), Number(req.body?.versionId), req.body?.slot ?? '');
         return { ok: true };
       });
     });

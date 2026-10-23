@@ -116,12 +116,42 @@ export async function sgdbCover(db: Db, sgdbId: number): Promise<string | null> 
   return res.data[0]?.url ?? null;
 }
 
+export interface SgdbGrid {
+  url: string;
+  thumb: string;
+  width: number;
+  height: number;
+}
+
+/** Every static portrait cover SteamGridDB has for a game, most popular first. */
+export async function sgdbGrids(db: Db, sgdbId: number): Promise<SgdbGrid[] | null> {
+  const key = getSetting(db, 'steamgriddb_api_key');
+  if (!key) return null;
+  const res = await getJson<SgdbResponse<SgdbGrid[]>>(
+    `https://www.steamgriddb.com/api/v2/grids/game/${sgdbId}?dimensions=600x900,342x482,660x930&types=static`,
+    { headers: { Authorization: `Bearer ${key}` } },
+  );
+  return res.data.map(({ url, thumb, width, height }) => ({ url, thumb, width, height }));
+}
+
 // --- libretro thumbnails (no key; matched by No-Intro/Redump file name) -----
 
 export function libretroBoxartUrl(system: string, romStem: string): string {
   const name = romStem.replace(/[&*/:`<>?\\|"]/g, '_');
   return `https://thumbnails.libretro.com/${encodeURIComponent(system)}/Named_Boxarts/${encodeURIComponent(name)}.png`;
 }
+
+export async function urlExists(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10_000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Hosts cover art may be downloaded from, so the picker can't be used to make the server fetch arbitrary URLs. */
+export const COVER_HOSTS = ['images.igdb.com', 'cdn2.steamgriddb.com', 'cdn.steamgriddb.com', 'thumbnails.libretro.com'];
 
 export async function download(url: string): Promise<{ data: Buffer; contentType: string } | null> {
   const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) });

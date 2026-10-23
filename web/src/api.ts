@@ -31,6 +31,32 @@ export const del = <T>(url: string) => api<T>('DELETE', url);
 
 export const coverUrl = (file: string | null) => (file ? `/api/covers/${file}` : null);
 
+/**
+ * PUT a file as the raw request body. Uses XHR rather than fetch because
+ * fetch can't report upload progress, and ROMs can be gigabytes.
+ */
+export function upload<T = unknown>(url: string, file: Blob, onProgress?: (loaded: number, total: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `/api${url}`);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = (e) => onProgress?.(e.loaded, e.total);
+    xhr.onload = () => {
+      let data: { error?: string } | null = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        // Not JSON (e.g. a proxy error page).
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      if (xhr.status === 401) window.dispatchEvent(new Event('romsafe:unauthorized'));
+      reject(new ApiError(data?.error ?? xhr.statusText ?? 'Upload failed', xhr.status));
+    };
+    xhr.onerror = () => reject(new ApiError('Upload failed: network error', 0));
+    xhr.send(file);
+  });
+}
+
 // --- shapes returned by the server -------------------------------------------
 
 export interface Platform {
@@ -121,6 +147,13 @@ export interface Candidate {
   year?: number;
   summary?: string;
   coverUrl?: string;
+}
+
+export interface CoverOption {
+  provider: 'igdb' | 'steamgriddb' | 'libretro';
+  url: string;
+  thumb: string;
+  label: string;
 }
 
 export interface Device {

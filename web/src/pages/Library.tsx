@@ -1,13 +1,16 @@
 import { useCallback, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { coverUrl, get, type GameSummary, type Platform } from '../api';
+import { faCloudArrowUp, Icon } from '../components/icons';
 import { JobButton, startScan, startScrape } from '../components/jobs';
-import { Badge, ErrorNote, Input, PageHeader, useApi } from '../components/ui';
+import { Badge, Button, ErrorNote, Input, PageHeader, useApi } from '../components/ui';
+import { RomUpload } from '../components/uploads';
 
 export default function Library() {
   const [params, setParams] = useSearchParams();
   const platform = params.get('platform') ?? '';
   const [q, setQ] = useState(params.get('q') ?? '');
+  const [uploading, setUploading] = useState(false);
 
   const platforms = useApi(() => get<Platform[]>('/platforms'));
   const games = useApi(
@@ -30,6 +33,9 @@ export default function Library() {
         subtitle={games.data ? `${games.data.total} games` : undefined}
         actions={
           <>
+            <Button onClick={() => setUploading(true)}>
+              <Icon icon={faCloudArrowUp} /> Upload ROMs
+            </Button>
             <JobButton label="Scan library" statusUrl="/library/scan" start={() => startScan()} onFinished={reload} />
             <JobButton
               label="Scrape metadata"
@@ -85,6 +91,16 @@ export default function Library() {
           </Link>
         ))}
       </div>
+
+      {uploading && platforms.data && (
+        <RomUpload
+          platforms={platforms.data}
+          initial={platform}
+          onClose={() => setUploading(false)}
+          // The server scans uploads itself; refresh once that's likely done.
+          onUploaded={() => setTimeout(reload, 3000)}
+        />
+      )}
     </>
   );
 }

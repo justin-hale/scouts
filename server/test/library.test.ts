@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import zlib from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { cleanTitle } from '../src/library/names.js';
 import { cueFiles, gdiFiles } from '../src/library/sheets.js';
 import { readZipEntryHead } from '../src/library/zip.js';
 import { gciComment } from '../src/saves/labels.js';
-import { startServer, type TestServer } from './helpers.js';
+import { gcDisc, gci, makeZip, ncsd, startServer, type TestServer } from './helpers.js';
 
 let srv: TestServer;
 
@@ -34,60 +33,7 @@ async function scan(slug: string) {
   assert.deepEqual(srv.services.scanner.status.errors, []);
 }
 
-/** A one-entry zip with the entry deflated, like most ROM zips. */
-function zip(name: string, data: Buffer): Buffer {
-  const comp = zlib.deflateRawSync(data);
-  const n = Buffer.from(name);
-  const crc = zlib.crc32(data);
-  const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0);
-  local.writeUInt16LE(20, 4);
-  local.writeUInt16LE(8, 8);
-  local.writeUInt32LE(crc, 14);
-  local.writeUInt32LE(comp.length, 18);
-  local.writeUInt32LE(data.length, 22);
-  local.writeUInt16LE(n.length, 26);
-  const central = Buffer.alloc(46);
-  central.writeUInt32LE(0x02014b50, 0);
-  central.writeUInt16LE(20, 4);
-  central.writeUInt16LE(20, 6);
-  central.writeUInt16LE(8, 10);
-  central.writeUInt32LE(crc, 16);
-  central.writeUInt32LE(comp.length, 20);
-  central.writeUInt32LE(data.length, 24);
-  central.writeUInt16LE(n.length, 28);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt16LE(1, 8);
-  eocd.writeUInt16LE(1, 10);
-  eocd.writeUInt32LE(46 + n.length, 12);
-  eocd.writeUInt32LE(30 + n.length + comp.length, 16);
-  return Buffer.concat([local, n, comp, central, n, eocd]);
-}
-
-function ncsd(titleId: bigint): Buffer {
-  const img = Buffer.alloc(0x8000);
-  img.write('NCSD', 0x100, 'ascii');
-  img.writeBigUInt64LE(titleId, 0x108);
-  return img;
-}
-
-function gcDisc(gameId: string): Buffer {
-  const img = Buffer.alloc(0x8000);
-  img.write(gameId, 0, 'latin1');
-  img.writeUInt32BE(0xc2339f3d, 0x1c);
-  return img;
-}
-
-function gci(code: string, maker: string, name: string, detail: string): Buffer {
-  const out = Buffer.alloc(0x40 + 0x2000);
-  out.write(code, 0, 'latin1');
-  out.write(maker, 4, 'latin1');
-  out.writeUInt32BE(0x100, 0x3c);
-  out.write(name, 0x40 + 0x100, 'latin1');
-  out.write(detail, 0x40 + 0x120, 'latin1');
-  return out;
-}
+const zip = (name: string, data: Buffer) => makeZip({ [name]: data });
 
 test('titles drop untagged disc numbers', () => {
   assert.equal(cleanTitle('Final Fantasy 9 cd1.iso'), 'Final Fantasy 9');

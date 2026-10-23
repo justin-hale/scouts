@@ -235,6 +235,13 @@ export const adminRoutes =
         return { ok: true };
       });
       admin.post<IdParams>('/games/:id/metadata/auto', async (req) => ({ changed: await metadata.auto(int(req.params.id)) }));
+      admin.get<IdParams & { Querystring: { q?: string } }>('/games/:id/covers', async (req) =>
+        metadata.coverOptions(int(req.params.id), req.query.q),
+      );
+      admin.post<IdParams & { Body: { url: string } }>('/games/:id/cover', async (req) => {
+        await metadata.setCoverFromUrl(int(req.params.id), String(req.body?.url ?? ''));
+        return { ok: true };
+      });
 
       admin.get<{ Params: { file: string } }>('/covers/:file', async (req, reply) => {
         if (!/^[\w-]+\.(jpg|png|webp)$/.test(req.params.file)) return notFound(reply);

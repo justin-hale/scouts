@@ -45,6 +45,9 @@ export class Scanner {
     errors: [],
   };
 
+  /** Platforms to rescan once the running scan ends (e.g. a ROM uploaded mid-scan). */
+  private queued = new Set<string>();
+
   constructor(private ctx: AppContext) {}
 
   /** Start a scan in the background. Returns false if one is already running. */
@@ -66,6 +69,11 @@ export class Scanner {
     return true;
   }
 
+  /** Scan one platform now, or right after the scan that is running. */
+  scanSoon(platform: string): void {
+    if (!this.start([platform])) this.queued.add(platform);
+  }
+
   async run(targets: PlatformConfig[]): Promise<void> {
     try {
       for (const pc of targets) {
@@ -81,6 +89,11 @@ export class Scanner {
       this.status.running = false;
       this.status.platform = null;
       this.status.finishedAt = now();
+      if (this.queued.size) {
+        const next = [...this.queued];
+        this.queued.clear();
+        this.start(next);
+      }
     }
   }
 

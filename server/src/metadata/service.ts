@@ -7,12 +7,15 @@ import { titleKey } from '../library/names.js';
 import { getPlatform } from '../platforms.js';
 import { writeAtomic } from '../saves/store.js';
 import {
+  COVER_HOSTS,
   download,
   igdbGame,
   igdbSearch,
   libretroBoxartUrl,
   sgdbCover,
+  sgdbGrids,
   sgdbSearch,
+  urlExists,
   type Candidate,
 } from './providers.js';
 
@@ -75,6 +78,86 @@ export class MetadataService {
         $g: g.id,
       });
     }
+  }
+
+  /**
+   * Cover choices for the picker: IGDB's cover for each matching game,
+   * every SteamGridDB grid for the best matches, and libretro box art for
+   * each of the game's ROM names (when it exists).
+   */
+  async coverOptions(gameId: number, query?: string): Promise<{ covers: CoverOption[]; providers: string[] }> {
+    const g = this.game(gameId);
+    const q = query?.trim() || g.title;
+    const platform = getPlatform(g.platform);
+    const db = this.ctx.db;
+
+    const igdbP = (async (): Promise<CoverOption[] | null> => {
+      const found = await igdbSearch(db, q, platform?.igdbPlatformId);
+      if (!found) return null;
+      if (g.igdb_id && !found.some((c) => c.id === g.igdb_id)) {
+        const current = await igdbGame(db, g.igdb_id);
+        if (current) found.unshift(current);
+      }
+      return found
+        .filter((c) => c.coverUrl)
+        .map((c) => ({
+          provider: 'igdb' as const,
+          url: c.coverUrl!,
+          thumb: c.coverUrl!.replace('t_cover_big_2x', 't_cover_big'),
+          label: c.year ? `${c.name} (${c.year})` : c.name,
+        }));
+    })();
+
+    const sgdbP = (async (): Promise<CoverOption[] | null> => {
+      const matches = await sgdbSearch(db, q);
+      if (!matches) return null;
+      const games = g.sgdb_id ? [{ id: g.sgdb_id, name: g.title }, ...matches.filter((m) => m.id !== g.sgdb_id)] : matches;
+      const grids = await Promise.all(games.slice(0, 3).map((m) => sgdbGrids(db, m.id).catch(() => [])));
+      return games.slice(0, 3).flatMap((m, i) =>
+        (grids[i] ?? []).slice(0, 24).map((grid) => ({
+          provider: 'steamgriddb' as const,
+          url: grid.url,
+          thumb: grid.thumb,
+          label: `${m.name} · ${grid.width}×${grid.height}`,
+        })),
+      );
+    })();
+
+    const libretroP = (async (): Promise<CoverOption[]> => {
+      if (!platform?.libretroName) return [];
+      const stems = db.all<{ stem: string }>('SELECT DISTINCT stem FROM roms WHERE game_id = $g ORDER BY missing, id LIMIT 5', { $g: g.id });
+      const urls = stems.map(({ stem }) => ({ stem, url: libretroBoxartUrl(platform.libretroName!, stem) }));
+      const ok = await Promise.all(urls.map((u) => urlExists(u.url)));
+      return urls.filter((_, i) => ok[i]).map((u) => ({ provider: 'libretro' as const, url: u.url, thumb: u.url, label: u.stem }));
+    })();
+
+    const [igdb, sgdb, libretro] = await Promise.all([igdbP.catch(() => null), sgdbP.catch(() => null), libretroP]);
+    const providers = [igdb && 'igdb', sgdb && 'steamgriddb', 'libretro'].filter(Boolean) as string[];
+    return { covers: [...(igdb ?? []), ...(sgdb ?? []), ...libretro], providers };
+  }
+
+  /** Use a cover the user picked. Only the providers' image hosts are allowed. */
+  async setCoverFromUrl(gameId: number, url: string): Promise<void> {
+    const g = this.game(gameId);
+    let host: string;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      throw Object.assign(new Error('Bad cover URL'), { statusCode: 400 });
+    }
+    if (!COVER_HOSTS.includes(host)) throw Object.assign(new Error(`Covers can't come from ${host}`), { statusCode: 400 });
+    const file = await this.saveCover(g, url);
+    if (!file) throw Object.assign(new Error('Could not download that image'), { statusCode: 502 });
+    this.ctx.db.run('UPDATE games SET cover_file = $c, updated_at = $now WHERE id = $g', { $c: file, $now: now(), $g: g.id });
+  }
+
+  /** Use an image uploaded from the user's computer. */
+  async setCoverFromUpload(gameId: number, data: Buffer): Promise<void> {
+    const g = this.game(gameId);
+    const ext = imageExt(data);
+    if (!ext) throw Object.assign(new Error('Upload a PNG, JPEG or WebP image'), { statusCode: 400 });
+    const file = this.storeCover(g, data, ext);
+    this.ctx.db.run('UPDATE games SET cover_file = $c, updated_at = $now WHERE id = $g', { $c: file, $now: now(), $g: g.id });
   }
 
   /**
@@ -144,10 +227,30 @@ export class MetadataService {
     const img = await download(url).catch(() => null);
     if (!img) return null;
     const ext = img.contentType.includes('png') ? '.png' : img.contentType.includes('webp') ? '.webp' : '.jpg';
-    const hash = crypto.createHash('sha256').update(img.data).digest('hex').slice(0, 12);
+    return this.storeCover(g, img.data, ext);
+  }
+
+  private storeCover(g: GameRow, data: Buffer, ext: string): string {
+    const hash = crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
     const name = `${g.id}-${hash}${ext}`;
-    writeAtomic(path.join(this.ctx.coverDir, name), img.data);
+    writeAtomic(path.join(this.ctx.coverDir, name), data);
     if (g.cover_file && g.cover_file !== name) fs.rmSync(path.join(this.ctx.coverDir, g.cover_file), { force: true });
     return name;
   }
+}
+
+export interface CoverOption {
+  provider: 'igdb' | 'steamgriddb' | 'libretro';
+  /** Full-size image the server downloads when picked. */
+  url: string;
+  /** Smaller preview for the picker grid. */
+  thumb: string;
+  label: string;
+}
+
+function imageExt(data: Buffer): string | null {
+  if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return '.png';
+  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return '.jpg';
+  if (data.toString('latin1', 0, 4) === 'RIFF' && data.toString('latin1', 8, 12) === 'WEBP') return '.webp';
+  return null;
 }

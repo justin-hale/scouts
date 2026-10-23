@@ -100,6 +100,51 @@ export async function readZipEntryHead(file: string, exts: Set<string>, length: 
   }
 }
 
+/**
+ * Extract every file of a small in-memory zip (an uploaded save folder, as
+ * RomM and Citra export them). Directories are skipped. Throws on archives it
+ * can't read, or once the output passes `maxTotal` bytes.
+ */
+export function unzipBuffer(zip: Buffer, maxTotal = 256 * 1024 * 1024): { name: string; data: Buffer }[] {
+  const eocd = zip.lastIndexOf(EOCD);
+  if (eocd < 0 || eocd + 22 > zip.length) throw new Error('Not a zip file');
+  let cdOffset = zip.readUInt32LE(eocd + 16);
+  if (cdOffset === SAT32) {
+    const loc = eocd - 20;
+    if (loc < 0 || zip.readUInt32LE(loc) !== ZIP64_LOCATOR) throw new Error('Unreadable zip');
+    const rec = Number(zip.readBigUInt64LE(loc + 8));
+    cdOffset = Number(zip.readBigUInt64LE(rec + 48));
+  }
+  const out: { name: string; data: Buffer }[] = [];
+  let total = 0;
+  for (let p = cdOffset; p + 46 <= zip.length && zip.readUInt32LE(p) === CENTRAL; ) {
+    const nameLen = zip.readUInt16LE(p + 28);
+    const extraLen = zip.readUInt16LE(p + 30);
+    const commentLen = zip.readUInt16LE(p + 32);
+    const e: Entry = {
+      name: zip.toString('utf8', p + 46, p + 46 + nameLen),
+      method: zip.readUInt16LE(p + 10),
+      compSize: zip.readUInt32LE(p + 20),
+      size: zip.readUInt32LE(p + 24),
+      offset: zip.readUInt32LE(p + 42),
+    };
+    readZip64Extra(zip.subarray(p + 46 + nameLen, p + 46 + nameLen + extraLen), e);
+    p += 46 + nameLen + extraLen + commentLen;
+    if (e.name.endsWith('/')) continue;
+    if (zip.readUInt32LE(e.offset) !== LOCAL) throw new Error('Unreadable zip');
+    const start = e.offset + 30 + zip.readUInt16LE(e.offset + 26) + zip.readUInt16LE(e.offset + 28);
+    const raw = zip.subarray(start, start + e.compSize);
+    let data: Buffer;
+    if (e.method === 0) data = Buffer.from(raw);
+    else if (e.method === 8) data = zlib.inflateRawSync(raw, { maxOutputLength: Math.max(1, maxTotal - total) });
+    else throw new Error(`"${e.name}" uses an unsupported compression method`);
+    total += data.length;
+    if (total > maxTotal) throw new Error('Zip is too large');
+    out.push({ name: e.name.replace(/\\/g, '/'), data });
+  }
+  return out;
+}
+
 /** Zip64 extra field: 64-bit values for whichever header fields were saturated, in this order. */
 function readZip64Extra(extra: Buffer, e: Entry): void {
   for (let p = 0; p + 4 <= extra.length; ) {

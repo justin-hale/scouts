@@ -5,7 +5,9 @@ import { now } from '../db.js';
 import { sha256Buffer } from '../library/hash.js';
 import { fileStem } from '../library/names.js';
 import { getPlatform } from '../platforms.js';
+import { unzipBuffer } from '../library/zip.js';
 import { layoutProfile, normalizeGameKey, parseSavePath, renderSavePath, type ParsedSave, type SaveKey } from '../profiles/profiles.js';
+import { isSafeRelative } from '../profiles/template.js';
 import { decodeSave } from './formats.js';
 
 export interface SaveRow {
@@ -212,6 +214,75 @@ export class SaveStore {
     return { imported };
   }
 
+  /**
+   * Store a save uploaded from the web GUI for one game. The upload's name
+   * can be anything ("Pokemon Black 2 [2026-10-22].sav"); where it goes
+   * depends on the platform:
+   * - ROM-keyed: keyed by the game's ROM name; the extension (.sav, .srm,
+   *   .dsv, _1.mcd ...) picks the file, via the emulator profiles.
+   * - 3DS/Wii: a zip of the save folder ("data/00000001/main"), as Citra,
+   *   Azahar and RomM export them.
+   * - PSP: a zip of one or more SAVEDATA folders.
+   * - GameCube: a .gci file, placed on memory card A of its region.
+   * Returns the saves that changed.
+   */
+  importUpload(gameId: number, uploadName: string, data: Buffer): SaveKey[] {
+    const db = this.ctx.db;
+    const game = db.get<{ platform: string; title_id: string | null }>('SELECT platform, title_id FROM games WHERE id = $id', { $id: gameId });
+    if (!game) throw new UploadError('Game not found', 404);
+    const pc = this.ctx.platform(game.platform)!;
+    const def = pc.def;
+    const ext = path.extname(uploadName).toLowerCase();
+    const keys: { key: SaveKey; data: Buffer }[] = [];
+
+    if (def.keyKind === 'rom') {
+      const rom = db.get<{ stem: string }>('SELECT stem FROM roms WHERE game_id = $g ORDER BY missing, id LIMIT 1', { $g: gameId });
+      if (!rom) throw new UploadError('This game has no ROM to name the save after');
+      const parsed = this.parseWithProfiles(pc, path.posix.basename(uploadName.replace(/\\/g, '/')));
+      const file = parsed?.file ?? (ext === '.sav' || ext === '.srm' ? 'battery.sav' : null);
+      if (!file) throw new UploadError(`RomSafe doesn't know where a "${ext || uploadName}" save goes for ${def.name}`);
+      // DeSmuME-style saves carry a footer whatever their extension; strip it so every DS emulator can load the save.
+      const format = parsed?.format ?? (def.slug === 'nds' ? 'desmume-dsv' : undefined);
+      keys.push({ key: { gameKey: rom.stem, file }, data: decodeSave(format, data) });
+    } else if (def.keyKind === 'titleId') {
+      if (!game.title_id) throw new UploadError('Set this game\'s title ID first (Edit on the game page)');
+      if (ext !== '.zip') throw new UploadError(`Upload ${def.name} saves as a .zip of the save folder (the one with "data" inside)`);
+      for (const entry of unzipUpload(data)) {
+        // Everything below "data/" is the save; without one, take the zip's paths as they are.
+        const at = entry.name.toLowerCase().lastIndexOf('data/');
+        const file = at >= 0 ? entry.name.slice(at + 5) : entry.name;
+        if (file && isSafeRelative(file)) keys.push({ key: { gameKey: game.title_id, file }, data: entry.data });
+      }
+    } else if (def.keyKind === 'saveDir') {
+      if (ext !== '.zip') throw new UploadError(`Upload ${def.name} saves as a .zip of the SAVEDATA folder`);
+      for (const entry of unzipUpload(data)) {
+        const parts = entry.name.split('/');
+        const at = parts.findIndex((p) => p.toUpperCase() === 'SAVEDATA');
+        const rest = parts.slice(at + 1);
+        if (rest.length < 2 || !isSafeRelative(rest.join('/'))) continue;
+        keys.push({ key: { gameKey: rest[0]!, file: rest.slice(1).join('/') }, data: entry.data });
+      }
+    } else if (def.slug === 'gc' && ext === '.gci') {
+      if (data.length < 0x40) throw new UploadError('Not a GCI file');
+      const code = data.toString('latin1', 0, 4);
+      const maker = data.toString('latin1', 4, 6);
+      const name = data.toString('latin1', 8, 0x28).replace(/\0[\s\S]*$/, '').replace(/[\\/:*?"<>|]/g, '_');
+      if (!/^[0-9A-Z]{4}$/.test(code) || !/^[0-9A-Z]{2}$/.test(maker) || !name) throw new UploadError('Not a GCI file');
+      const region = { J: 'JAP', P: 'EUR' }[code[3]!] ?? 'USA';
+      keys.push({ key: { gameKey: `${region}/A`, file: `${maker}-${code}-${name}.gci` }, data });
+    } else {
+      throw new UploadError(`Uploading ${def.name} saves isn't supported yet; sync them from a device or drop them in the save folder`);
+    }
+
+    if (keys.length === 0) throw new UploadError('No save files found in the upload');
+    const changed: SaveKey[] = [];
+    for (const { key, data } of keys) {
+      key.gameKey = normalizeGameKey(def, key.gameKey);
+      if (this.importData(def.slug, key, data, `Uploaded (${uploadName})`)) changed.push(key);
+    }
+    return changed;
+  }
+
   private parseWithProfiles(pc: PlatformConfig, fileName: string): ParsedSave | null {
     for (const profile of this.ctx.profiles) {
       const key = parseSavePath(profile, pc.def, fileName);
@@ -230,6 +301,23 @@ export class SaveStore {
       this.addVersion(save, data, { note, makeCurrent: true });
       return true;
     });
+  }
+}
+
+function unzipUpload(data: Buffer): { name: string; data: Buffer }[] {
+  try {
+    return unzipBuffer(data);
+  } catch (err) {
+    throw new UploadError(`Couldn't read the zip: ${(err as Error).message}`);
+  }
+}
+
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode = 400,
+  ) {
+    super(message);
   }
 }
 

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { coverUrl, get, patch, post, type Candidate, type GameDetail } from '../api';
-import { faArrowLeft, faDownload, faPuzzlePiece, Icon } from '../components/icons';
+import { CoverPicker } from '../components/CoverPicker';
+import { faArrowLeft, faCloudArrowUp, faDownload, faImage, faPuzzlePiece, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
+import { SaveUpload } from '../components/uploads';
 import { Badge, Button, Card, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
 
 export default function Game() {
@@ -10,6 +12,8 @@ export default function Game() {
   const game = useApi(() => get<GameDetail>(`/games/${id}`), [id]);
   const [searching, setSearching] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [pickingCover, setPickingCover] = useState(false);
+  const [uploadingSave, setUploadingSave] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,13 +42,20 @@ export default function Game() {
       <ErrorNote error={error} />
       <div className="flex flex-col gap-6 md:flex-row">
         <div className="w-48 shrink-0">
-          <div className="aspect-[3/4] overflow-hidden rounded-lg border border-stone-800 bg-stone-900">
+          <button
+            onClick={() => setPickingCover(true)}
+            className="group relative block aspect-[3/4] w-full overflow-hidden rounded-lg border border-stone-800 bg-stone-900"
+            title="Change cover"
+          >
             {g.cover ? (
               <img src={coverUrl(g.cover)!} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-stone-500">No cover</div>
             )}
-          </div>
+            <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-black/70 py-2 text-xs text-stone-100 opacity-0 transition group-hover:opacity-100">
+              <Icon icon={faImage} /> Change cover
+            </span>
+          </button>
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold text-stone-50">{g.title}</h1>
@@ -67,7 +78,12 @@ export default function Game() {
         </div>
       </div>
 
-      <h2 className="mt-10 mb-3 text-lg font-semibold text-stone-100">Saves</h2>
+      <div className="mt-10 mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-stone-100">Saves</h2>
+        <Button onClick={() => setUploadingSave(true)}>
+          <Icon icon={faCloudArrowUp} /> Upload save
+        </Button>
+      </div>
       {g.saves.length === 0 ? (
         <p className="text-sm text-stone-500">No saves yet. They appear here once a device syncs or a file is found in the server save folder.</p>
       ) : (
@@ -137,6 +153,8 @@ export default function Game() {
 
       {searching && <MetadataSearch game={g} onClose={() => setSearching(false)} onApplied={game.reload} />}
       {editing && <EditGame game={g} onClose={() => setEditing(false)} onSaved={game.reload} />}
+      {pickingCover && <CoverPicker gameId={g.id} title={g.title} onClose={() => setPickingCover(false)} onPicked={game.reload} />}
+      {uploadingSave && <SaveUpload gameId={g.id} onClose={() => setUploadingSave(false)} onUploaded={game.reload} />}
     </>
   );
 }

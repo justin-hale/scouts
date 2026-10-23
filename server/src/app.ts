@@ -13,6 +13,7 @@ import { loadProfiles } from './profiles/profiles.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { deviceRoutes } from './routes/device.js';
+import { uploadRoutes } from './routes/uploads.js';
 import { SyncError, SyncService } from './saves/sync.js';
 
 export interface Services {
@@ -32,7 +33,8 @@ export async function buildApp(config: Config, opts: { logger?: boolean } = {}):
     metadata: new MetadataService(ctx),
   };
 
-  // Save uploads can be large (3DS extdata, PSP saves); ROMs never go up.
+  // Save uploads can be large (3DS extdata, PSP saves). ROM uploads stream
+  // to disk and skip this limit (routes/uploads.ts).
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024 * 1024 });
   app.addHook('onClose', async () => db.close());
 
@@ -54,6 +56,7 @@ export async function buildApp(config: Config, opts: { logger?: boolean } = {}):
   app.get('/api/health', async () => ({ ok: true, name: 'romsafe', version: '0.1.0' }));
   await app.register(authRoutes(services), { prefix: '/api/auth' });
   await app.register(adminRoutes(services), { prefix: '/api' });
+  await app.register(uploadRoutes(services), { prefix: '/api' });
   await app.register(deviceRoutes(services), { prefix: '/api/device' });
 
   app.setNotFoundHandler((req, reply) => {

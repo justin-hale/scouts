@@ -45,7 +45,7 @@ export interface Platform {
   saveLayoutOverride: string | null;
   defaultSaveLayout: string;
   profiles: string[];
-  counts: { games: number; roms: number; saves: number };
+  counts: { games: number; roms: number; saves: number; extras: number };
 }
 
 export interface GameSummary {
@@ -81,6 +81,7 @@ export interface GameDetail {
     missing: number;
   }[];
   saves: SaveSummary[];
+  extras: { id: number; kind: string; relPath: string; fileName: string; size: number; missing: number }[];
 }
 
 export interface SaveSummary {
@@ -99,6 +100,8 @@ export interface SaveListItem extends SaveSummary {
   platform: string;
   gameId: number | null;
   gameTitle: string | null;
+  /** Name read from the save itself when it isn't linked to a game (GameCube GCI). */
+  label: string | null;
 }
 
 export interface SaveVersion {

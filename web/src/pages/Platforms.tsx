@@ -67,6 +67,7 @@ function PlatformCard({ platform: p, onSaved }: { platform: Platform; onSaved: (
           <Badge>{p.slug}</Badge>
           <span className="text-xs text-stone-500">
             {p.counts.games} games · {p.counts.roms} ROMs · {p.counts.saves} saves
+            {p.counts.extras > 0 && ` · ${p.counts.extras} extras`}
           </span>
         </div>
         <label className="flex items-center gap-2 text-sm text-stone-400">

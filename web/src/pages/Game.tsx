@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { coverUrl, get, patch, post, type Candidate, type GameDetail } from '../api';
+import { faArrowLeft, faDownload, faPuzzlePiece, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
 import { Badge, Button, Card, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
 
@@ -31,8 +32,8 @@ export default function Game() {
 
   return (
     <>
-      <Link to={`/library?platform=${g.platform}`} className="mb-4 inline-block text-sm text-stone-400 hover:text-stone-200">
-        ← Library
+      <Link to={`/library?platform=${g.platform}`} className="mb-4 inline-flex items-center gap-1.5 text-sm text-stone-400 hover:text-stone-200">
+        <Icon icon={faArrowLeft} /> Library
       </Link>
       <ErrorNote error={error} />
       <div className="flex flex-col gap-6 md:flex-row">
@@ -99,11 +100,7 @@ export default function Game() {
                 <td className="px-4 py-2 font-mono text-xs">{r.crc32}</td>
                 <td className="px-4 py-2 font-mono text-xs break-all">{r.sha1}</td>
                 <td className="px-4 py-2">
-                  {!r.missing && (
-                    <a className="text-brand-400 hover:underline" href={`/api/roms/${r.id}/download`}>
-                      Download
-                    </a>
-                  )}
+                  {!r.missing && <DownloadLink href={`/api/roms/${r.id}/download`} />}
                 </td>
               </tr>
             ))}
@@ -111,9 +108,44 @@ export default function Game() {
         </table>
       </Card>
 
+      {g.extras.length > 0 && (
+        <>
+          <h2 className="mt-10 mb-1 flex items-center gap-2 text-lg font-semibold text-stone-100">
+            <Icon icon={faPuzzlePiece} className="text-stone-500" /> Extras
+          </h2>
+          <p className="mb-3 text-sm text-stone-500">DLC, mods, hacks, patches and other files kept in this game's side folders.</p>
+          <Card className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody>
+                {g.extras.map((x) => (
+                  <tr key={x.id} className="border-t border-stone-800 first:border-t-0">
+                    <td className="px-4 py-2">
+                      <Badge tone="brand">{x.kind}</Badge>
+                    </td>
+                    <td className="px-4 py-2 break-all">
+                      {x.relPath} {x.missing ? <Badge tone="red">missing</Badge> : null}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">{formatBytes(x.size)}</td>
+                    <td className="px-4 py-2">{!x.missing && <DownloadLink href={`/api/extras/${x.id}/download`} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
+
       {searching && <MetadataSearch game={g} onClose={() => setSearching(false)} onApplied={game.reload} />}
       {editing && <EditGame game={g} onClose={() => setEditing(false)} onSaved={game.reload} />}
     </>
+  );
+}
+
+function DownloadLink({ href }: { href: string }) {
+  return (
+    <a className="inline-flex items-center gap-1.5 whitespace-nowrap text-brand-400 hover:underline" href={href}>
+      <Icon icon={faDownload} /> Download
+    </a>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { post } from '../api';
+import { Logo } from '../components/Logo';
 import { Button, Card, ErrorNote, Input } from '../components/ui';
 
 export default function Login({ setup, onDone }: { setup: boolean; onDone: () => void }) {
@@ -26,7 +27,7 @@ export default function Login({ setup, onDone }: { setup: boolean; onDone: () =>
     <div className="flex h-full items-center justify-center p-4">
       <Card className="w-full max-w-sm p-6">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <img src="/favicon.svg" alt="" className="h-12 w-12" />
+          <Logo className="h-16 w-16" />
           <h1 className="text-xl font-semibold text-stone-50">RomSafe</h1>
           <p className="text-sm text-stone-400">
             {setup ? 'Welcome! Choose an admin password to finish setting up your server.' : 'Sign in to your server.'}

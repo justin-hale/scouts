@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { get, post, type SaveSummary, type SaveVersion } from '../api';
+import { faClockRotateLeft, faDownload, Icon } from './icons';
 import { Badge, Button, Card, formatBytes, formatTime, useApi } from './ui';
 
 export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?: ReactNode; onChange: () => void }) {
@@ -26,13 +27,13 @@ export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?:
           {save.currentVersionId && (
             <a
               href={`/api/save-versions/${save.currentVersionId}/download`}
-              className="rounded-md border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100 hover:bg-stone-700"
+              className="inline-flex items-center gap-1.5 rounded-md border border-stone-700 bg-stone-800 px-3 py-1.5 text-sm font-medium text-stone-100 hover:bg-stone-700"
             >
-              Download
+              <Icon icon={faDownload} /> Download
             </a>
           )}
           <Button variant="ghost" onClick={() => setOpen(!open)}>
-            {open ? 'Hide history' : 'History'}
+            <Icon icon={faClockRotateLeft} /> {open ? 'Hide history' : 'History'}
           </Button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { faXmark, Icon } from './icons';
 
 export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -93,7 +94,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         <div className="flex items-center justify-between border-b border-stone-800 px-5 py-3">
           <h2 className="font-semibold text-stone-100">{title}</h2>
           <button className="text-stone-400 hover:text-stone-100" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon icon={faXmark} />
           </button>
         </div>
         <div className="p-5">{children}</div>

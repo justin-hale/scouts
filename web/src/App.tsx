@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { get, post } from './api';
+import {
+  faArrowRightFromBracket,
+  faFloppyDisk,
+  faGamepad,
+  faGear,
+  faLayerGroup,
+  faMobileScreenButton,
+  faTriangleExclamation,
+  Icon,
+} from './components/icons';
+import { Logo } from './components/Logo';
 import Conflicts from './pages/Conflicts';
 import DevicePage from './pages/Device';
 import Devices from './pages/Devices';
@@ -14,12 +25,12 @@ import Settings from './pages/Settings';
 type AuthState = { setupRequired: boolean; authenticated: boolean } | null;
 
 const NAV = [
-  { to: '/library', label: 'Library', icon: '🎮' },
-  { to: '/saves', label: 'Saves', icon: '💾' },
-  { to: '/platforms', label: 'Platforms', icon: '🗂️' },
-  { to: '/devices', label: 'Devices', icon: '📱' },
-  { to: '/conflicts', label: 'Conflicts', icon: '⚠️' },
-  { to: '/settings', label: 'Settings', icon: '⚙️' },
+  { to: '/library', label: 'Library', icon: faGamepad },
+  { to: '/saves', label: 'Saves', icon: faFloppyDisk },
+  { to: '/platforms', label: 'Platforms', icon: faLayerGroup },
+  { to: '/devices', label: 'Devices', icon: faMobileScreenButton },
+  { to: '/conflicts', label: 'Conflicts', icon: faTriangleExclamation },
+  { to: '/settings', label: 'Settings', icon: faGear },
 ];
 
 export default function App() {
@@ -53,7 +64,7 @@ export default function App() {
     <div className="flex h-full flex-col md:flex-row">
       <aside className="flex shrink-0 flex-row items-center gap-1 overflow-x-auto border-b border-stone-800 bg-stone-950 px-3 py-2 md:w-56 md:flex-col md:items-stretch md:border-r md:border-b-0 md:px-3 md:py-5">
         <div className="mr-3 flex items-center gap-2 px-2 md:mr-0 md:mb-6">
-          <img src="/favicon.svg" alt="" className="h-7 w-7" />
+          <Logo className="h-8 w-8" />
           <span className="text-lg font-semibold tracking-tight text-stone-50">RomSafe</span>
         </div>
         {NAV.map((n) => (
@@ -66,7 +77,7 @@ export default function App() {
               }`
             }
           >
-            <span aria-hidden>{n.icon}</span>
+            <Icon icon={n.icon} fixedWidth aria-hidden />
             {n.label}
             {n.to === '/conflicts' && conflicts > 0 && (
               <span className="ml-auto rounded-full bg-brand-600 px-1.5 text-xs font-semibold text-white">{conflicts}</span>
@@ -74,9 +85,10 @@ export default function App() {
           </NavLink>
         ))}
         <button
-          className="mt-auto hidden rounded-md px-3 py-2 text-left text-sm text-stone-500 hover:text-stone-300 md:block"
+          className="mt-auto hidden items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-stone-500 hover:text-stone-300 md:flex"
           onClick={() => post('/auth/logout').then(refreshAuth)}
         >
+          <Icon icon={faArrowRightFromBracket} fixedWidth aria-hidden />
           Sign out
         </button>
       </aside>

@@ -201,9 +201,18 @@ export interface Conflict {
   serverVersionId: number;
   serverSize: number;
   serverCreatedAt: number;
+  /** When the server copy's file was last changed, if known. */
+  serverFileMtime: number | null;
+  /** Where the server copy came from when no device uploaded it ("Found in server save folder"). */
+  serverNote: string | null;
+  serverDevice: string | null;
+  serverFolder: string | null;
   deviceVersionId: number;
   deviceSize: number;
   deviceCreatedAt: number;
+  deviceFileMtime: number | null;
+  /** The device's save folder for the emulator the copy came from. */
+  deviceFolder: string | null;
 }
 
 export interface Profile {

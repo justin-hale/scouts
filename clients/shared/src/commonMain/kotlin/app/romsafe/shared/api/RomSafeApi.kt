@@ -103,6 +103,8 @@ class RomSafeApi(
         base: Long?,
         conflict: Boolean = false,
         slot: String = "",
+        /** The file's modified time (ms), shown on the Conflicts page to tell which copy is newer. */
+        modified: Long? = null,
     ): UploadResponse =
         client.put("api/device/saves/upload") {
             parameter("platform", platform)
@@ -110,6 +112,7 @@ class RomSafeApi(
             base?.let { parameter("base", it) }
             if (conflict) parameter("conflict", 1)
             if (slot.isNotEmpty()) parameter("slot", slot)
+            modified?.let { parameter("modified", it) }
             contentType(ContentType.Application.OctetStream)
             setBody(bytes)
         }.ok()

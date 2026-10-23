@@ -118,7 +118,7 @@ class SyncEngineTest {
         assertEquals(1, result.busy)
         assertEquals(emptyList(), result.issues)
         assertTrue(tree.files.getValue("$saveDir/00000002/main").first.contentEquals(newSave))
-        assertTrue(calls.any { it.startsWith("PUT /api/device/saves/upload") && "slot=2" in it && "base=4" in it })
+        assertTrue(calls.any { it.startsWith("PUT /api/device/saves/upload") && "slot=2" in it && "base=4" in it && "modified=100" in it })
         assertEquals(HttpMethod.Post.value, calls.last().substringBefore(' '))
 
         // A second run reads nothing it already hashed.

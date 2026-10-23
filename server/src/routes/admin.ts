@@ -375,10 +375,16 @@ export const adminRoutes =
           `SELECT c.id, c.save_id AS saveId, c.created_at AS createdAt, c.resolved_at AS resolvedAt, c.resolution,
              s.platform, s.file, s.game_key AS gameKey, g.title AS gameTitle, g.id AS gameId, d.name AS device,
              sv.id AS serverVersionId, sv.size AS serverSize, sv.created_at AS serverCreatedAt,
-             dv.id AS deviceVersionId, dv.size AS deviceSize, dv.created_at AS deviceCreatedAt
+             sv.file_mtime AS serverFileMtime, sv.note AS serverNote, sd.name AS serverDevice,
+             (SELECT m.save_root FROM device_mappings m
+               WHERE m.device_id = sv.device_id AND m.platform = s.platform AND m.slot = COALESCE(sv.slot, '')) AS serverFolder,
+             dv.id AS deviceVersionId, dv.size AS deviceSize, dv.created_at AS deviceCreatedAt, dv.file_mtime AS deviceFileMtime,
+             (SELECT m.save_root FROM device_mappings m
+               WHERE m.device_id = c.device_id AND m.platform = s.platform AND m.slot = c.slot) AS deviceFolder
            FROM conflicts c JOIN saves s ON s.id = c.save_id
            LEFT JOIN games g ON g.id = s.game_id LEFT JOIN devices d ON d.id = c.device_id
            JOIN save_versions sv ON sv.id = c.server_version_id JOIN save_versions dv ON dv.id = c.device_version_id
+           LEFT JOIN devices sd ON sd.id = sv.device_id
            WHERE ($all = 1 OR c.resolved_at IS NULL) ORDER BY c.id DESC`,
           { $all: req.query.all ? 1 : 0 },
         ),

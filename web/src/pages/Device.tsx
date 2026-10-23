@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { del, get, patch, post, put, type DeviceDetail, type Platform } from '../api';
 import { Badge, Button, Card, ErrorNote, formatBytes, Input, PageHeader, timeAgo, useApi } from '../components/ui';
+import { folderLabel } from '../folders';
 
 interface DeviceRoms {
   serverRoms: { romId: number; fileName: string; size: number; gameTitle: string | null; localPath: string | null; queued: number }[];
@@ -121,25 +122,6 @@ export default function DevicePage() {
       {selected ? <RomTable deviceId={id} platform={selected} /> : <p className="text-sm text-stone-500">Scan a ROM folder first.</p>}
     </>
   );
-}
-
-/**
- * Android reports SAF tree URIs (content://…/tree/primary%3ARetroArch%2Fsaves).
- * Show them the way the app does: "Internal storage/RetroArch/saves".
- */
-function folderLabel(root: string | null): string {
-  if (!root) return '—';
-  const m = /^content:\/\/([^/]+)\/tree\/([^/]+)/.exec(root);
-  if (!m) return root;
-  const [, authority, encoded] = m;
-  const docId = decodeURIComponent(encoded!);
-  if (authority === 'com.android.externalstorage.documents') {
-    const [volume, ...rest] = docId.split(':');
-    const path = rest.join(':');
-    const base = volume === 'primary' ? 'Internal storage' : 'SD card';
-    return path ? `${base}/${path}` : base;
-  }
-  return `${authority}: ${docId}`;
 }
 
 function RomTable({ deviceId, platform }: { deviceId: number; platform: string }) {

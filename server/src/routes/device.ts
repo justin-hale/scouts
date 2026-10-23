@@ -153,10 +153,14 @@ export const deviceRoutes =
         return { actions: sync.plan(req.device!.id, platform, files, slot) };
       });
 
-      dev.put<{ Querystring: { platform: string; slot?: string; path: string; base?: string; conflict?: string }; Body: Buffer }>(
+      dev.put<{
+        Querystring: { platform: string; slot?: string; path: string; base?: string; conflict?: string; modified?: string };
+        Body: Buffer;
+      }>(
         '/saves/upload',
         async (req, reply) => {
-          const { platform, slot = '', path, base, conflict } = req.query;
+          const { platform, slot = '', path, base, conflict, modified } = req.query;
+          const fileMtime = Number(modified);
           if (!Buffer.isBuffer(req.body)) return reply.code(415).send({ error: 'Send the file as application/octet-stream' });
           if (!path || !isSafeRelative(normalizePath(path))) return reply.code(400).send({ error: 'Bad path' });
           const baseVersionId = base ? Number(base) : null;
@@ -168,6 +172,7 @@ export const deviceRoutes =
             baseVersionId,
             conflict === '1' || conflict === 'true',
             slot,
+            Number.isFinite(fileMtime) && fileMtime > 0 ? fileMtime : null,
           );
         },
       );

@@ -232,6 +232,8 @@ export class SyncService {
     baseVersionId: number | null,
     asConflict: boolean,
     slot = '',
+    /** The file's modified time on the device (ms), shown on conflicts. */
+    fileMtime: number | null = null,
   ): UploadResult {
     const { def, profile } = this.mapping(deviceId, platform, slot);
     const key = this.toKey(deviceId, def, profile, localPath);
@@ -264,18 +266,26 @@ export class SyncService {
         // Kept in the history, but no sync state: the next plan downloads the real save.
         const known = this.ctx.db.get('SELECT 1 AS x FROM save_versions WHERE save_id = $s AND sha256 = $sha', { $s: save.id, $sha: sha });
         if (!known) {
-          this.store.addVersion(save, raw, { deviceId, makeCurrent: false, note: 'Empty save from device; the current save was kept' });
+          this.store.addVersion(save, raw, {
+            deviceId,
+            slot,
+            fileMtime,
+            makeCurrent: false,
+            note: 'Empty save from device; the current save was kept',
+          });
         }
         return { status: 'empty', saveId: save.id, versionId: current.id };
       }
       if (!current || (!asConflict && current.id === baseVersionId && !this.openConflict(deviceId, save.id))) {
-        const v = this.store.addVersion(save, raw, { deviceId, makeCurrent: true, parentVersionId: current?.id ?? null });
+        const v = this.store.addVersion(save, raw, { deviceId, slot, fileMtime, makeCurrent: true, parentVersionId: current?.id ?? null });
         this.setState(deviceId, slot, save.id, v.id, deviceSha);
         return { status: 'ok' as const, saveId: save.id, versionId: v.id };
       }
 
       const v = this.store.addVersion(save, raw, {
         deviceId,
+        slot,
+        fileMtime,
         makeCurrent: false,
         parentVersionId: baseVersionId,
         note: 'Conflicting copy from device',
@@ -283,13 +293,13 @@ export class SyncService {
       const open = this.openConflict(deviceId, save.id);
       let conflictId: number;
       if (open) {
-        this.ctx.db.run('UPDATE conflicts SET device_version_id = $v WHERE id = $id', { $v: v.id, $id: open.id });
+        this.ctx.db.run('UPDATE conflicts SET device_version_id = $v, slot = $slot WHERE id = $id', { $v: v.id, $slot: slot, $id: open.id });
         conflictId = open.id;
       } else {
         conflictId = this.ctx.db.run(
-          `INSERT INTO conflicts (save_id, device_id, server_version_id, device_version_id, created_at)
-           VALUES ($s, $d, $sv, $dv, $t)`,
-          { $s: save.id, $d: deviceId, $sv: current.id, $dv: v.id, $t: now() },
+          `INSERT INTO conflicts (save_id, device_id, slot, server_version_id, device_version_id, created_at)
+           VALUES ($s, $d, $slot, $sv, $dv, $t)`,
+          { $s: save.id, $d: deviceId, $slot: slot, $sv: current.id, $dv: v.id, $t: now() },
         ).lastId;
       }
       // The device now "agrees" with its own copy, so once the conflict is

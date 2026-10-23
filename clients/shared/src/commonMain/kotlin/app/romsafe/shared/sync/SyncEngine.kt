@@ -113,6 +113,7 @@ class SyncEngine(
         val busyPaths = busy.mapTo(mutableSetOf()) { it.path.lowercase() }
         r = r.copy(busy = r.busy + busy.size)
 
+        val modified = settled.associate { it.path to it.modified }
         val local = settled.map { f ->
             val sha = cache.get(hashScope, f) ?: sha256Hex(folder.tree.read(f.path)).also { cache.put(hashScope, f, it) }
             LocalSave(f.path, sha, f.size)
@@ -124,11 +125,11 @@ class SyncEngine(
                 r = when (a.action) {
                     SyncAction.OK -> r.copy(inSync = r.inSync + 1)
                     SyncAction.UPLOAD -> {
-                        upload(slug, folder, a, conflict = false)
+                        upload(slug, folder, a, conflict = false, modified[a.path])
                         r.copy(uploaded = r.uploaded + 1)
                     }
                     SyncAction.CONFLICT -> {
-                        upload(slug, folder, a, conflict = true)
+                        upload(slug, folder, a, conflict = true, modified[a.path])
                         r.copy(conflicts = r.conflicts + a.path)
                     }
                     SyncAction.PENDING_CONFLICT -> r.copy(conflicts = r.conflicts + a.path)
@@ -152,9 +153,9 @@ class SyncEngine(
         return r
     }
 
-    private suspend fun upload(platform: String, folder: EmulatorFolder, a: SyncAction, conflict: Boolean) {
+    private suspend fun upload(platform: String, folder: EmulatorFolder, a: SyncAction, conflict: Boolean, modified: Long?) {
         val bytes = folder.tree.read(a.path)
-        api.upload(platform, a.path, bytes, a.baseVersionId, conflict, folder.slot)
+        api.upload(platform, a.path, bytes, a.baseVersionId, conflict, folder.slot, modified?.takeIf { it > 0 })
     }
 
     private suspend fun download(folder: EmulatorFolder, a: SyncAction, hashScope: String) {

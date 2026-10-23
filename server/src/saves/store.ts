@@ -130,17 +130,28 @@ export class SaveStore {
   addVersion(
     save: SaveRow,
     data: Buffer,
-    opts: { deviceId?: number | null; note?: string; makeCurrent: boolean; parentVersionId?: number | null },
+    opts: {
+      deviceId?: number | null;
+      /** Which of the device's emulators (see device_mappings.slot). */
+      slot?: string | null;
+      /** When the file was last changed, in ms. */
+      fileMtime?: number | null;
+      note?: string;
+      makeCurrent: boolean;
+      parentVersionId?: number | null;
+    },
   ): VersionRow {
     const sha = this.putBlob(data);
     const { lastId } = this.ctx.db.run(
-      `INSERT INTO save_versions (save_id, sha256, size, device_id, parent_version_id, note, created_at)
-       VALUES ($s, $sha, $size, $d, $parent, $note, $t)`,
+      `INSERT INTO save_versions (save_id, sha256, size, device_id, slot, file_mtime, parent_version_id, note, created_at)
+       VALUES ($s, $sha, $size, $d, $slot, $mtime, $parent, $note, $t)`,
       {
         $s: save.id,
         $sha: sha,
         $size: data.length,
         $d: opts.deviceId ?? null,
+        $slot: opts.deviceId != null ? (opts.slot ?? '') : null,
+        $mtime: opts.fileMtime != null ? Math.round(opts.fileMtime) : null,
         $parent: opts.parentVersionId ?? save.current_version_id,
         $note: opts.note ?? null,
         $t: now(),
@@ -215,8 +226,9 @@ export class SaveStore {
       const key = parseSavePath(layout, pc.def, rel);
       if (!key) continue;
       key.gameKey = normalizeGameKey(pc.def, key.gameKey);
-      const data = fs.readFileSync(path.join(pc.savePath, rel));
-      if (this.importData(pc.def.slug, key, data, 'Found in server save folder')) imported++;
+      const file = path.join(pc.savePath, rel);
+      const data = fs.readFileSync(file);
+      if (this.importData(pc.def.slug, key, data, 'Found in server save folder', fs.statSync(file).mtimeMs)) imported++;
     }
     return { imported };
   }
@@ -236,14 +248,17 @@ export class SaveStore {
     for (const rel of candidates) {
       const key = this.parseWithProfiles(pc, path.posix.basename(rel));
       if (!key || !romStems.has(`${path.posix.dirname(rel)}/${key.gameKey}`.toLowerCase())) continue;
-      const data = decodeSave(key.format, fs.readFileSync(path.join(pc.romPath, rel)));
+      const file = path.join(pc.romPath, rel);
+      const data = decodeSave(key.format, fs.readFileSync(file));
       const sha = sha256Buffer(data);
       const prev = db.get<{ sha256: string }>('SELECT sha256 FROM rom_folder_saves WHERE platform = $p AND rel_path = $r', {
         $p: pc.def.slug,
         $r: rel,
       });
       if (prev?.sha256 === sha) continue;
-      if (this.importData(pc.def.slug, { gameKey: key.gameKey, file: key.file }, data, 'Found next to the ROM')) imported++;
+      if (this.importData(pc.def.slug, { gameKey: key.gameKey, file: key.file }, data, 'Found next to the ROM', fs.statSync(file).mtimeMs)) {
+        imported++;
+      }
       db.run(
         `INSERT INTO rom_folder_saves (platform, rel_path, sha256) VALUES ($p, $r, $sha)
          ON CONFLICT(platform, rel_path) DO UPDATE SET sha256 = excluded.sha256`,
@@ -379,8 +394,8 @@ export class SaveStore {
   }
 
   /** Make `data` the current version of a save unless it already is. Returns true if a version was added. */
-  private importData(platform: string, key: SaveKey, data: Buffer, note: string): boolean {
-    return this.importDataResult(platform, key, data, note) === 'added';
+  private importData(platform: string, key: SaveKey, data: Buffer, note: string, fileMtime?: number): boolean {
+    return this.importDataResult(platform, key, data, note, fileMtime) === 'added';
   }
 
   /**
@@ -389,7 +404,13 @@ export class SaveStore {
    * history, and the real save is written back to the save folder in case
    * the empty file came from there.
    */
-  private importDataResult(platform: string, key: SaveKey, data: Buffer, note: string): 'added' | 'same' | 'empty' {
+  private importDataResult(
+    platform: string,
+    key: SaveKey,
+    data: Buffer,
+    note: string,
+    fileMtime?: number,
+  ): 'added' | 'same' | 'empty' {
     const sha = sha256Buffer(data);
     return this.ctx.db.tx(() => {
       const save = this.findOrCreateSave(platform, key);
@@ -397,11 +418,11 @@ export class SaveStore {
       if (current?.sha256 === sha) return 'same';
       if (current && isEmptySave(platform, data) && !isEmptySave(platform, fs.readFileSync(this.blobPath(current.sha256)))) {
         const known = this.ctx.db.get('SELECT 1 FROM save_versions WHERE save_id = $s AND sha256 = $sha', { $s: save.id, $sha: sha });
-        if (!known) this.addVersion(save, data, { note: `${note}; empty, so the current save was kept`, makeCurrent: false });
+        if (!known) this.addVersion(save, data, { note: `${note}; empty, so the current save was kept`, makeCurrent: false, fileMtime });
         this.mirror(save.id);
         return 'empty';
       }
-      this.addVersion(save, data, { note, makeCurrent: true });
+      this.addVersion(save, data, { note, makeCurrent: true, fileMtime });
       return 'added';
     });
   }

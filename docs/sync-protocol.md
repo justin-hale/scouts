@@ -117,7 +117,7 @@ uploading every platform's saves under each one.
 ### 2. Upload
 
 ```http
-PUT /api/device/saves/upload?platform=gba&path=Metroid%20Fusion.srm&base=41[&conflict=1][&slot=2]
+PUT /api/device/saves/upload?platform=gba&path=Metroid%20Fusion.srm&base=41[&conflict=1][&slot=2][&modified=1792771827046]
 Content-Type: application/octet-stream
 <bytes>
 → { "status": "ok" | "conflict" | "empty" | "deleted", "saveId": 7, "versionId": 42, "conflictId"?: 3 }
@@ -126,7 +126,8 @@ Content-Type: application/octet-stream
 If the server moved on since `base`, the upload is stored as a side version and a conflict is
 opened (`status: "conflict"`). Uploads are never lost. `empty` means the file held no game data,
 so it went into the history but the current save was kept (the next plan downloads it).
-`deleted` means the file is a save deleted in the GUI; nothing was stored, and there is no
+`modified` is the file's modified time on the device (ms since the epoch). It is optional, but the
+Conflicts page uses it to show which copy was changed more recently. `deleted` means the file is a save deleted in the GUI; nothing was stored, and there is no
 `saveId`.
 
 ### 3. Download and acknowledge

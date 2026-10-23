@@ -360,3 +360,38 @@ test('a save deleted in the GUI is not uploaded again by a device that still has
   assert.equal((await handheld.upload('ps2', 'Mcd002.ps2', newer, null)).status, 'ok');
   assert.equal((await plan(handheld, 'ps2', { 'Mcd002.ps2': card }))[0].action !== 'deleted', true);
 });
+
+test('a conflict shows which emulator folder its copy came from and when each file changed', async () => {
+  // Citra's folder is in sync; Azahar's folder on the same device holds an older copy.
+  const handheld = await srv.pairDevice('Two Folders');
+  await handheld.call('PUT', '/api/device/mappings', {
+    mappings: [
+      { platform: '3ds', profile: 'azahar', saveRoot: 'content://x/tree/primary%3Acitra-emu%2Fsdmc' },
+      { platform: '3ds', slot: '2', profile: 'azahar', saveRoot: 'content://x/tree/primary%3ARoms%2F3ds%2Fsdmc' },
+    ],
+  });
+  const rel = 'Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000/title/00040000/0011c400/data/00000001/main';
+  const newer = Buffer.from('omega ruby, october');
+  const older = Buffer.from('omega ruby, september');
+  const put = (slot: string, data: Buffer, base: number | null, conflict: boolean, modified: number) =>
+    srv.app.inject({
+      method: 'PUT',
+      url: `/api/device/saves/upload?platform=3ds&slot=${slot}&path=${encodeURIComponent(rel)}&base=${base ?? ''}&conflict=${conflict ? 1 : 0}&modified=${modified}`,
+      headers: { ...handheld.headers, 'content-type': 'application/octet-stream' },
+      payload: data,
+    });
+  const october = Date.UTC(2026, 9, 22, 15, 42);
+  const september = Date.UTC(2026, 8, 23, 2, 20);
+  assert.equal((await put('', newer, null, false, october)).json().status, 'ok');
+  const res = await put('2', older, null, true, september);
+  assert.equal(res.json().status, 'conflict');
+
+  const conflicts = await srv.admin('GET', '/api/conflicts');
+  const c = conflicts.body.find((x: any) => x.gameKey === '000400000011c400');
+  assert.ok(c, JSON.stringify(conflicts.body));
+  assert.equal(c.serverFileMtime, october);
+  assert.equal(c.serverDevice, 'Two Folders');
+  assert.equal(c.serverFolder, 'content://x/tree/primary%3Acitra-emu%2Fsdmc');
+  assert.equal(c.deviceFileMtime, september);
+  assert.equal(c.deviceFolder, 'content://x/tree/primary%3ARoms%2F3ds%2Fsdmc');
+});

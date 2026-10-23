@@ -280,6 +280,14 @@ const migrations: string[] = [
     PRIMARY KEY (platform, game_key, file, sha256)
   );
   `,
+  `
+  -- When the file behind a version was last changed (its mtime, in ms), and
+  -- which of the device's emulators it came from, so a conflict can show
+  -- which copy is newer and which folder it was in.
+  ALTER TABLE save_versions ADD COLUMN file_mtime INTEGER;
+  ALTER TABLE save_versions ADD COLUMN slot TEXT;
+  ALTER TABLE conflicts ADD COLUMN slot TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 function migrate(db: Db): void {

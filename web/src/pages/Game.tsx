@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { coverUrl, get, patch, post, type Candidate, type GameDetail } from '../api';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { coverUrl, del, get, patch, post, type Candidate, type GameDetail } from '../api';
 import { CoverPicker } from '../components/CoverPicker';
 import { ExportSaves } from '../components/ExportSaves';
-import { faArrowLeft, faCloudArrowUp, faDownload, faImage, faPuzzlePiece, Icon } from '../components/icons';
+import { faArrowLeft, faCloudArrowUp, faDownload, faImage, faPuzzlePiece, faTrashCan, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
 import { SaveUpload } from '../components/uploads';
-import { Badge, Button, Card, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
+import { Badge, Button, Card, ConfirmDialog, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
 
 export default function Game() {
   const id = Number(useParams().id);
@@ -15,6 +15,10 @@ export default function Game() {
   const [editing, setEditing] = useState(false);
   const [pickingCover, setPickingCover] = useState(false);
   const [uploadingSave, setUploadingSave] = useState(false);
+  const [deletingRom, setDeletingRom] = useState<GameDetail['roms'][number] | null>(null);
+  const [deletingGame, setDeletingGame] = useState(false);
+  const [deleteSaves, setDeleteSaves] = useState(false);
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +79,9 @@ export default function Game() {
             <Button variant="ghost" onClick={() => setEditing(true)}>
               Edit
             </Button>
+            <Button variant="ghost" className="text-stone-500 hover:text-red-300" onClick={() => setDeletingGame(true)}>
+              <Icon icon={faTrashCan} /> Delete game
+            </Button>
           </div>
         </div>
       </div>
@@ -120,7 +127,12 @@ export default function Game() {
                 <td className="px-4 py-2 font-mono text-xs">{r.crc32}</td>
                 <td className="px-4 py-2 font-mono text-xs break-all">{r.sha1}</td>
                 <td className="px-4 py-2">
-                  {!r.missing && <DownloadLink href={`/api/roms/${r.id}/download`} />}
+                  <div className="flex items-center justify-end gap-3">
+                    {!r.missing && <DownloadLink href={`/api/roms/${r.id}/download`} />}
+                    <button className="text-stone-500 hover:text-red-300" title="Delete this ROM file" onClick={() => setDeletingRom(r)}>
+                      <Icon icon={faTrashCan} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -159,7 +171,61 @@ export default function Game() {
       {editing && <EditGame game={g} onClose={() => setEditing(false)} onSaved={game.reload} />}
       {pickingCover && <CoverPicker gameId={g.id} title={g.title} onClose={() => setPickingCover(false)} onPicked={game.reload} />}
       {uploadingSave && <SaveUpload gameId={g.id} onClose={() => setUploadingSave(false)} onUploaded={game.reload} />}
+      {deletingRom && (
+        <ConfirmDialog
+          title="Delete ROM file"
+          confirmLabel="Delete ROM"
+          onClose={() => setDeletingRom(null)}
+          onConfirm={async () => {
+            const r = await del<{ gameDeleted: boolean }>(`/roms/${deletingRom.id}`);
+            if (r.gameDeleted) navigate(`/library?platform=${g.platform}`);
+            else await game.reload();
+          }}
+        >
+          <p>
+            Delete <span className="font-mono text-stone-100">{deletingRom.relPath}</span>
+            {/\.(cue|gdi)$/i.test(deletingRom.relPath) && ' and the track files it lists'}?
+          </p>
+          {g.roms.length === 1 && <p>It's this game's only ROM, so the game is removed from the library too. Its saves are kept and show up under Unmatched.</p>}
+          <TrashNote />
+        </ConfirmDialog>
+      )}
+      {deletingGame && (
+        <ConfirmDialog
+          title="Delete game"
+          confirmLabel="Delete game"
+          onClose={() => setDeletingGame(false)}
+          onConfirm={async () => {
+            await del(`/games/${g.id}${deleteSaves ? '?saves=1' : ''}`);
+            navigate(`/library?platform=${g.platform}`);
+          }}
+        >
+          <p>
+            Remove <span className="font-medium text-stone-100">{g.title}</span> from the library: {g.roms.length} ROM file{g.roms.length === 1 ? '' : 's'}
+            {g.extras.length > 0 && ` and ${g.extras.length} extra${g.extras.length === 1 ? '' : 's'}`}.
+          </p>
+          <TrashNote />
+          {g.saves.length > 0 && (
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-stone-800 p-3">
+              <input type="checkbox" className="mt-0.5 accent-red-500" checked={deleteSaves} onChange={(e) => setDeleteSaves(e.target.checked)} />
+              <span>
+                Also delete its {g.saves.length} save{g.saves.length === 1 ? '' : 's'} and their history.
+                <span className="block text-xs text-stone-500">This can't be undone. Leave unticked to keep them under Unmatched.</span>
+              </span>
+            </label>
+          )}
+        </ConfirmDialog>
+      )}
     </>
+  );
+}
+
+function TrashNote() {
+  return (
+    <p className="text-stone-500">
+      Files move to the hidden <span className="font-mono">.romsafe-trash</span> folder inside this platform's ROM folder, so you can still get them
+      back from the share. Empty that folder to free the space.
+    </p>
   );
 }
 

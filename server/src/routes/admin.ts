@@ -8,6 +8,7 @@ import type { Candidate } from '../metadata/providers.js';
 import { PLATFORMS } from '../platforms.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
+import { LibraryRemover } from '../library/remove.js';
 import { zipStream } from '../library/zip.js';
 import { downloadName } from '../saves/content.js';
 import { saveLabel } from '../saves/labels.js';
@@ -30,6 +31,7 @@ export const adminRoutes =
   ({ ctx, sync, scanner, metadata }: Services): FastifyPluginAsync =>
   async (app) => {
     const db = ctx.db;
+    const remover = new LibraryRemover(ctx, sync.store);
 
     /** Extra fields the GUI shows for a save: its download name and whether it's empty. */
     const describeSave = <T extends { platform: string; gameKey: string; file: string; sha256: string | null }>(s: T) => ({
@@ -298,6 +300,17 @@ export const adminRoutes =
         reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${name.replace(/[\\/:*?"<>|]/g, '_')}.zip`)}`);
         return reply.send(zipStream(sync.store.exportEntries({ platform, gameId, profile })));
       });
+
+      admin.delete<IdParams>('/saves/:id', async (req, reply) => {
+        if (!sync.store.deleteSave(int(req.params.id))) return notFound(reply, 'Save not found');
+        return { ok: true };
+      });
+
+      admin.delete<IdParams>('/roms/:id', async (req) => remover.deleteRom(int(req.params.id)));
+
+      admin.delete<IdParams & { Querystring: { saves?: string } }>('/games/:id', async (req) =>
+        remover.deleteGame(int(req.params.id), { saves: req.query.saves === '1' || req.query.saves === 'true' }),
+      );
 
       admin.get<IdParams>('/saves/:id/versions', async (req) =>
         db.all(

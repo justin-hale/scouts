@@ -173,6 +173,28 @@ export class SaveStore {
   }
 
   /**
+   * Delete a save and its whole history: the database rows (device sync
+   * state and conflicts go with them), its copy in the server save folder,
+   * and any blob no other version still uses.
+   */
+  deleteSave(saveId: number): boolean {
+    const save = this.getSave(saveId);
+    if (!save) return false;
+    const db = this.ctx.db;
+    const target = this.serverPath(save);
+    const shas = db.all<{ sha256: string }>('SELECT DISTINCT sha256 FROM save_versions WHERE save_id = $id', { $id: saveId });
+    db.run('DELETE FROM saves WHERE id = $id', { $id: saveId });
+    if (target) {
+      fs.rmSync(target, { force: true });
+      pruneEmptyDirs(path.dirname(target), this.ctx.platform(save.platform)!.savePath!);
+    }
+    for (const { sha256 } of shas) {
+      if (!db.get('SELECT 1 FROM save_versions WHERE sha256 = $s LIMIT 1', { $s: sha256 })) fs.rmSync(this.blobPath(sha256), { force: true });
+    }
+    return true;
+  }
+
+  /**
    * Pick up saves placed directly in a platform's save folder on the server
    * (existing backups, or files edited by hand). Each file whose content
    * differs from the current version becomes the new current version.
@@ -393,6 +415,19 @@ export class UploadError extends Error {
     readonly statusCode = 400,
   ) {
     super(message);
+  }
+}
+
+/** Remove `dir` and its parents while they're empty, stopping at (and keeping) `root`. */
+export function pruneEmptyDirs(dir: string, root: string): void {
+  const top = path.resolve(root);
+  for (let d = path.resolve(dir); d !== top && d.startsWith(top + path.sep); d = path.dirname(d)) {
+    try {
+      if (fs.readdirSync(d).length) return;
+      fs.rmdirSync(d);
+    } catch {
+      return;
+    }
   }
 }
 

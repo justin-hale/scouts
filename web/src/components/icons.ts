@@ -19,6 +19,7 @@ export {
   faMagnifyingGlass,
   faMobileScreenButton,
   faPuzzlePiece,
+  faTrashCan,
   faTriangleExclamation,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { faXmark, Icon } from './icons';
+import { faTrashCan, faXmark, Icon } from './icons';
 
 export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -100,6 +100,49 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         <div className="p-5">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** Ask before something destructive. `onConfirm` may throw; its message is shown and the dialog stays open. */
+export function ConfirmDialog({
+  title,
+  confirmLabel,
+  onConfirm,
+  onClose,
+  children,
+}: {
+  title: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<unknown>;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={title} onClose={busy ? () => {} : onClose}>
+      <ErrorNote error={error} />
+      <div className="space-y-3 text-sm text-stone-300">{children}</div>
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button variant="danger" onClick={run} disabled={busy}>
+          <Icon icon={faTrashCan} /> {busy ? 'Deleting…' : confirmLabel}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

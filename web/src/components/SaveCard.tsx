@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { get, post, type SaveSummary, type SaveVersion } from '../api';
-import { faClockRotateLeft, faDownload, Icon } from './icons';
-import { Badge, Button, Card, formatBytes, formatTime, useApi } from './ui';
+import { del, get, post, type SaveSummary, type SaveVersion } from '../api';
+import { faClockRotateLeft, faDownload, faTrashCan, Icon } from './icons';
+import { Badge, Button, Card, ConfirmDialog, formatBytes, formatTime, useApi } from './ui';
 
 export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?: ReactNode; onChange: () => void }) {
   const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const versions = useApi(() => (open ? get<SaveVersion[]>(`/saves/${save.id}/versions`) : Promise.resolve([])), [open, save.currentVersionId]);
 
   const restore = async (versionId: number) => {
@@ -44,8 +45,28 @@ export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?:
           <Button variant="ghost" onClick={() => setOpen(!open)}>
             <Icon icon={faClockRotateLeft} /> {open ? 'Hide history' : 'History'}
           </Button>
+          <Button variant="ghost" className="text-stone-500 hover:text-red-300" onClick={() => setDeleting(true)} title="Delete this save">
+            <Icon icon={faTrashCan} />
+          </Button>
         </div>
       </div>
+      {deleting && (
+        <ConfirmDialog
+          title="Delete save"
+          confirmLabel="Delete save"
+          onClose={() => setDeleting(false)}
+          onConfirm={async () => {
+            await del(`/saves/${save.id}`);
+            onChange();
+          }}
+        >
+          <p>
+            Delete <span className="font-mono text-stone-100">{save.downloadName}</span> and all {save.versionCount} version
+            {save.versionCount === 1 ? '' : 's'} of its history? This can't be undone. Download it first if you might want it back.
+          </p>
+          <p className="text-stone-500">A device that still has this save will upload it again on its next sync, so delete it there too.</p>
+        </ConfirmDialog>
+      )}
       {open && (
         <table className="mt-4 w-full text-sm">
           <tbody>

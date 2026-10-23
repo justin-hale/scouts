@@ -112,7 +112,7 @@ export class SyncService {
   }
 
   private deviceHasRomStem(deviceId: number, platform: string, stem: string): boolean {
-    return !!this.ctx.db.get('SELECT 1 AS x FROM device_roms WHERE device_id = $d AND platform = $p AND stem = $s LIMIT 1', {
+    return !!this.ctx.db.get('SELECT 1 AS x FROM device_roms WHERE device_id = $d AND platform = $p AND stem = $s COLLATE NOCASE LIMIT 1', {
       $d: deviceId,
       $p: platform,
       $s: stem,

@@ -335,6 +335,18 @@ test('saves only belong to a ROM-keyed platform if the device has that ROM', asy
       ['Pokemon Crystal.srm', 'unrecognized'],
     ],
   );
+
+  // RetroArch may name the save in a different case than the ROM ("mariomon.srm" for "Mariomon.gba").
+  await handheld.call('POST', '/api/device/roms/inventory', {
+    platform: 'gba',
+    files: [
+      { path: 'Metroid Fusion.gba', size: 1 },
+      { path: 'Mariomon.gba', size: 1 },
+    ],
+  });
+  const lower = await plan(handheld, 'gba', { 'mariomon.srm': Buffer.from('mariomon progress') });
+  assert.deepEqual(lower.filter((a) => a.path === 'mariomon.srm').map((a) => a.action), ['upload']);
+  assert.equal((await handheld.upload('gba', 'mariomon.srm', Buffer.from('mariomon progress'), null)).status, 'ok');
 });
 
 test('a save deleted in the GUI is not uploaded again by a device that still has it', async () => {

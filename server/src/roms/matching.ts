@@ -110,12 +110,16 @@ export function setManualMatch(db: Db, deviceId: number, deviceRomId: number, ro
   return changes > 0;
 }
 
-/** The server ROM stem a device's local ROM stem corresponds to (for ROM-named saves). */
+/**
+ * The server ROM stem a device's local ROM stem corresponds to (for ROM-named saves).
+ * Case-insensitive: emulators don't always keep the ROM's case in save names
+ * ("mariomon.srm" for "Mariomon.gba"), and device storage ignores case anyway.
+ */
 export function serverStemForLocal(db: Db, deviceId: number, platform: string, localStem: string): string | null {
   return (
     db.get<{ stem: string }>(
       `SELECT r.stem FROM device_roms d JOIN roms r ON r.id = d.rom_id
-       WHERE d.device_id = $d AND d.platform = $p AND d.stem = $s LIMIT 1`,
+       WHERE d.device_id = $d AND d.platform = $p AND d.stem = $s COLLATE NOCASE LIMIT 1`,
       { $d: deviceId, $p: platform, $s: localStem },
     )?.stem ?? null
   );

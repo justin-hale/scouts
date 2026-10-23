@@ -11,14 +11,19 @@ export async function read3dsTitleId(file: string): Promise<string | null> {
   try {
     const header = Buffer.alloc(0x200);
     const { bytesRead } = await fh.read(header, 0, header.length, 0);
-    if (bytesRead < 0x120) return null;
-    const magic = header.toString('ascii', 0x100, 0x104);
-    let id: bigint;
-    if (magic === 'NCSD') id = header.readBigUInt64LE(0x108);
-    else if (magic === 'NCCH') id = header.readBigUInt64LE(0x118);
-    else return null;
-    return id === 0n ? null : id.toString(16).padStart(16, '0');
+    return parse3dsTitleId(header.subarray(0, bytesRead));
   } finally {
     await fh.close();
   }
+}
+
+/** Title ID from the first 0x200 bytes of a 3DS image (also used for zipped ROMs). */
+export function parse3dsTitleId(header: Buffer): string | null {
+  if (header.length < 0x120) return null;
+  const magic = header.toString('ascii', 0x100, 0x104);
+  let id: bigint;
+  if (magic === 'NCSD') id = header.readBigUInt64LE(0x108);
+  else if (magic === 'NCCH') id = header.readBigUInt64LE(0x118);
+  else return null;
+  return id === 0n ? null : id.toString(16).padStart(16, '0');
 }

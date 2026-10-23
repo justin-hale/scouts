@@ -15,6 +15,8 @@ export function cleanTitle(fileName: string): string {
   let t = fileStem(fileName)
     .replace(/\s*[([][^)\]]*[)\]]/g, '')
     .replace(/_/g, ' ')
+    // Untagged disc numbers ("Final Fantasy 9 cd1"), so every disc lands in one game.
+    .replace(/[\s-]*\b(?:cd|disc|disk)\s*\d+$/i, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
   // "Name, The - Subtitle" / "Name, The"

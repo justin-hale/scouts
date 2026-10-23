@@ -19,15 +19,20 @@ export async function readDiscId(file: string): Promise<DiscId | null> {
   try {
     const head = Buffer.alloc(0x300);
     const { bytesRead } = await fh.read(head, 0, head.length, 0);
-    if (bytesRead < 0x60) return null;
-    const magic = head.toString('latin1', 0, 4);
-    let offset = 0;
-    if (magic === 'WBFS') offset = 0x200;
-    else if (magic === 'RVZ\x01' || magic === 'WIA\x01') offset = 0x58;
-    return parseDiscHeader(head.subarray(offset, offset + 0x80));
+    return parseDiscImage(head.subarray(0, bytesRead));
   } finally {
     await fh.close();
   }
+}
+
+/** Game ID from the first 0x300 bytes of a disc image in any of the formats above (also used for zipped ROMs). */
+export function parseDiscImage(head: Buffer): DiscId | null {
+  if (head.length < 0x60) return null;
+  const magic = head.toString('latin1', 0, 4);
+  let offset = 0;
+  if (magic === 'WBFS') offset = 0x200;
+  else if (magic === 'RVZ\x01' || magic === 'WIA\x01') offset = 0x58;
+  return parseDiscHeader(head.subarray(offset, offset + 0x80));
 }
 
 export function parseDiscHeader(h: Buffer): DiscId | null {

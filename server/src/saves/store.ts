@@ -3,8 +3,10 @@ import path from 'node:path';
 import type { AppContext, PlatformConfig } from '../context.js';
 import { now } from '../db.js';
 import { sha256Buffer } from '../library/hash.js';
+import { fileStem } from '../library/names.js';
 import { getPlatform } from '../platforms.js';
-import { layoutProfile, normalizeGameKey, parseSavePath, renderSavePath, type SaveKey } from '../profiles/profiles.js';
+import { layoutProfile, normalizeGameKey, parseSavePath, renderSavePath, type ParsedSave, type SaveKey } from '../profiles/profiles.js';
+import { decodeSave } from './formats.js';
 
 export interface SaveRow {
   id: number;
@@ -67,13 +69,13 @@ export class SaveStore {
     if (existing) return existing;
     const { lastId } = this.ctx.db.run(
       'INSERT INTO saves (platform, game_key, file, game_id) VALUES ($p, $k, $f, $g)',
-      { $p: platform, $k: key.gameKey, $f: key.file, $g: this.gameIdFor(platform, key.gameKey) },
+      { $p: platform, $k: key.gameKey, $f: key.file, $g: this.gameIdFor(platform, key.gameKey, key.file) },
     );
     return this.getSave(lastId)!;
   }
 
-  /** Which library game a save belongs to, from its game key. */
-  gameIdFor(platform: string, gameKey: string): number | null {
+  /** Which library game a save belongs to, from its game key (and, for memory cards, its file). */
+  gameIdFor(platform: string, gameKey: string, file?: string): number | null {
     const def = getPlatform(platform);
     if (!def) return null;
     const db = this.ctx.db;
@@ -88,7 +90,14 @@ export class SaveStore {
     if (def.keyKind === 'titleId') {
       return db.get<{ id: number }>('SELECT id FROM games WHERE platform = $p AND title_id = $t', { $p: platform, $t: gameKey })?.id ?? null;
     }
-    if (def.keyKind === 'card') return null;
+    if (def.keyKind === 'card') {
+      // A card holds many games, but each Dolphin GCI file belongs to one:
+      // "01-GZLE-gczelda.gci" is maker 01, game code GZLE, i.e. disc ID GZLE01.
+      const m = platform === 'gc' && file ? /^([0-9A-Z]{2})-([0-9A-Z]{4})-/i.exec(path.posix.basename(file)) : null;
+      if (!m) return null;
+      const discId = `${m[2]}${m[1]}`.toLowerCase();
+      return db.get<{ id: number }>('SELECT id FROM games WHERE platform = $p AND title_id = $t', { $p: platform, $t: discId })?.id ?? null;
+    }
     // saveDir: PSP folders start with the game's serial (ULUS10336DATA00).
     return (
       db.get<{ id: number }>(
@@ -102,7 +111,7 @@ export class SaveStore {
   relinkSaves(): void {
     const unlinked = this.ctx.db.all<SaveRow>('SELECT * FROM saves WHERE game_id IS NULL');
     for (const s of unlinked) {
-      const gameId = this.gameIdFor(s.platform, s.game_key);
+      const gameId = this.gameIdFor(s.platform, s.game_key, s.file);
       if (gameId) this.ctx.db.run('UPDATE saves SET game_id = $g WHERE id = $id', { $g: gameId, $id: s.id });
     }
   }
@@ -166,16 +175,61 @@ export class SaveStore {
       if (!key) continue;
       key.gameKey = normalizeGameKey(pc.def, key.gameKey);
       const data = fs.readFileSync(path.join(pc.savePath, rel));
-      const sha = sha256Buffer(data);
-      this.ctx.db.tx(() => {
-        const save = this.findOrCreateSave(pc.def.slug, key);
-        const current = save.current_version_id ? this.getVersion(save.current_version_id) : undefined;
-        if (current?.sha256 === sha) return;
-        this.addVersion(save, data, { note: 'Found in server save folder', makeCurrent: true });
-        imported++;
-      });
+      if (this.importData(pc.def.slug, key, data, 'Found in server save folder')) imported++;
     }
     return { imported };
+  }
+
+  /**
+   * Pick up saves kept next to ROMs ("Mario Kart.v64" + "Mario Kart.srm"),
+   * the way many people run emulators. A file counts when an emulator
+   * profile recognises its name and a ROM with the same name sits in the same
+   * folder. The ROM folder is left untouched; the save is versioned and
+   * mirrored into the platform's save folder like any other.
+   */
+  importBesideRoms(pc: PlatformConfig, candidates: string[], romPaths: string[]): { imported: number } {
+    if (pc.def.keyKind !== 'rom' || !pc.romPath) return { imported: 0 };
+    const db = this.ctx.db;
+    const romStems = new Set(romPaths.map((r) => `${path.posix.dirname(r)}/${fileStem(r)}`.toLowerCase()));
+    let imported = 0;
+    for (const rel of candidates) {
+      const key = this.parseWithProfiles(pc, path.posix.basename(rel));
+      if (!key || !romStems.has(`${path.posix.dirname(rel)}/${key.gameKey}`.toLowerCase())) continue;
+      const data = decodeSave(key.format, fs.readFileSync(path.join(pc.romPath, rel)));
+      const sha = sha256Buffer(data);
+      const prev = db.get<{ sha256: string }>('SELECT sha256 FROM rom_folder_saves WHERE platform = $p AND rel_path = $r', {
+        $p: pc.def.slug,
+        $r: rel,
+      });
+      if (prev?.sha256 === sha) continue;
+      if (this.importData(pc.def.slug, { gameKey: key.gameKey, file: key.file }, data, 'Found next to the ROM')) imported++;
+      db.run(
+        `INSERT INTO rom_folder_saves (platform, rel_path, sha256) VALUES ($p, $r, $sha)
+         ON CONFLICT(platform, rel_path) DO UPDATE SET sha256 = excluded.sha256`,
+        { $p: pc.def.slug, $r: rel, $sha: sha },
+      );
+    }
+    return { imported };
+  }
+
+  private parseWithProfiles(pc: PlatformConfig, fileName: string): ParsedSave | null {
+    for (const profile of this.ctx.profiles) {
+      const key = parseSavePath(profile, pc.def, fileName);
+      if (key) return key;
+    }
+    return null;
+  }
+
+  /** Make `data` the current version of a save unless it already is. Returns true if a version was added. */
+  private importData(platform: string, key: SaveKey, data: Buffer, note: string): boolean {
+    const sha = sha256Buffer(data);
+    return this.ctx.db.tx(() => {
+      const save = this.findOrCreateSave(platform, key);
+      const current = save.current_version_id ? this.getVersion(save.current_version_id) : undefined;
+      if (current?.sha256 === sha) return false;
+      this.addVersion(save, data, { note, makeCurrent: true });
+      return true;
+    });
   }
 }
 

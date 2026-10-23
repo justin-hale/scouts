@@ -7,6 +7,7 @@ import { now } from '../db.js';
 import type { Candidate } from '../metadata/providers.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
+import { saveLabel } from '../saves/labels.js';
 import { PUBLIC_SETTINGS, publicSettings, setSetting } from '../settings.js';
 
 type IdParams = { Params: { id: string } };
@@ -39,6 +40,17 @@ export const adminRoutes =
         return reply.sendFile(rom.rel_path, root, { dotfiles: 'allow', cacheControl: false });
       });
 
+      shared.get<IdParams>('/extras/:id/download', async (req, reply) => {
+        const extra = db.get<{ platform: string; rel_path: string; file_name: string }>(
+          'SELECT platform, rel_path, file_name FROM extras WHERE id = $id AND missing = 0',
+          { $id: int(req.params.id) },
+        );
+        const root = extra && ctx.platform(extra.platform)?.romPath;
+        if (!extra || !root) return notFound(reply, 'File not found');
+        reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(extra.file_name)}`);
+        return reply.sendFile(extra.rel_path, root, { dotfiles: 'allow', cacheControl: false });
+      });
+
       shared.get<IdParams>('/save-versions/:id/download', async (req, reply) => {
         const v = sync.store.getVersion(int(req.params.id));
         if (!v) return notFound(reply);
@@ -69,6 +81,7 @@ export const adminRoutes =
         const games = counts('SELECT platform, count(*) AS n FROM games GROUP BY platform');
         const roms = counts('SELECT platform, count(*) AS n FROM roms WHERE missing = 0 GROUP BY platform');
         const saves = counts('SELECT platform, count(*) AS n FROM saves WHERE current_version_id IS NOT NULL GROUP BY platform');
+        const extras = counts('SELECT platform, count(*) AS n FROM extras WHERE missing = 0 GROUP BY platform');
         return ctx.platforms().map((p) => ({
           slug: p.def.slug,
           name: p.def.name,
@@ -81,7 +94,12 @@ export const adminRoutes =
           saveLayoutOverride: p.saveLayoutOverride,
           defaultSaveLayout: p.def.defaultSaveLayout,
           profiles: ctx.profiles.filter((pr) => profileSupports(pr, p.def)).map((pr) => pr.id),
-          counts: { games: games.get(p.def.slug) ?? 0, roms: roms.get(p.def.slug) ?? 0, saves: saves.get(p.def.slug) ?? 0 },
+          counts: {
+            games: games.get(p.def.slug) ?? 0,
+            roms: roms.get(p.def.slug) ?? 0,
+            saves: saves.get(p.def.slug) ?? 0,
+            extras: extras.get(p.def.slug) ?? 0,
+          },
         }));
       });
 
@@ -175,7 +193,12 @@ export const adminRoutes =
            WHERE s.game_id = $id ORDER BY s.file`,
           { $id: id },
         );
-        return { ...game, roms, saves };
+        const extras = db.all(
+          `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
+           FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
+          { $id: id },
+        );
+        return { ...game, roms, saves, extras };
       });
 
       admin.patch<IdParams & { Body: { title?: string; summary?: string | null; titleId?: string | null } }>(
@@ -221,18 +244,20 @@ export const adminRoutes =
       // --- saves & conflicts ---------------------------------------------------
 
       admin.get<{ Querystring: { platform?: string } }>('/saves', async (req) =>
-        db.all(
-          `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
-             g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
-             (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
-           FROM saves s
-           LEFT JOIN games g ON g.id = s.game_id
-           LEFT JOIN save_versions v ON v.id = s.current_version_id
-           LEFT JOIN devices d ON d.id = v.device_id
-           WHERE s.current_version_id IS NOT NULL AND ($p IS NULL OR s.platform = $p)
-           ORDER BY s.platform, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
-          { $p: req.query.platform ?? null },
-        ),
+        db
+          .all<{ platform: string; file: string; gameId: number | null; sha256: string }>(
+            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
+               g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
+               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
+             FROM saves s
+             LEFT JOIN games g ON g.id = s.game_id
+             LEFT JOIN save_versions v ON v.id = s.current_version_id
+             LEFT JOIN devices d ON d.id = v.device_id
+             WHERE s.current_version_id IS NOT NULL AND ($p IS NULL OR s.platform = $p)
+             ORDER BY s.platform, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
+            { $p: req.query.platform ?? null },
+          )
+          .map((s) => ({ ...s, label: s.gameId ? null : saveLabel(s.platform, s.file, sync.store.blobPath(s.sha256)) })),
       );
 
       admin.get<IdParams>('/saves/:id/versions', async (req) =>

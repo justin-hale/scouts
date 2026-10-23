@@ -54,13 +54,14 @@ export const PLATFORMS: PlatformDef[] = [
   romPlatform('snes', 'Super Nintendo', ['.sfc', '.smc'], 19, 'Nintendo - Super Nintendo Entertainment System'),
   romPlatform('n64', 'Nintendo 64', ['.n64', '.z64', '.v64'], 4, 'Nintendo - Nintendo 64'),
   romPlatform('gb', 'Game Boy', ['.gb'], 33, 'Nintendo - Game Boy'),
-  romPlatform('gbc', 'Game Boy Color', ['.gbc'], 22, 'Nintendo - Game Boy Color'),
+  // Plenty of people keep original Game Boy games in their GBC folder and play them in the GBC emulator.
+  romPlatform('gbc', 'Game Boy Color', ['.gbc', '.gb'], 22, 'Nintendo - Game Boy Color'),
   romPlatform('gba', 'Game Boy Advance', ['.gba'], 24, 'Nintendo - Game Boy Advance'),
   romPlatform('nds', 'Nintendo DS', ['.nds', '.dsi'], 20, 'Nintendo - Nintendo DS'),
   {
     slug: '3ds',
     name: 'Nintendo 3DS',
-    romExtensions: ['.3ds', '.cci', '.cia', '.cxi', '.3dsx', '.app'],
+    romExtensions: ['.3ds', '.cci', '.cia', '.cxi', '.3dsx', '.app', ...ARCHIVES],
     keyKind: 'titleId',
     keyFormat: '{category:8}{titleLow:8}',
     defaultSaveLayout:
@@ -71,7 +72,7 @@ export const PLATFORMS: PlatformDef[] = [
   {
     slug: 'gc',
     name: 'GameCube',
-    romExtensions: ['.iso', '.gcm', '.rvz', '.ciso', '.gcz', '.wia'],
+    romExtensions: ['.iso', '.gcm', '.rvz', '.ciso', '.gcz', '.wia', ...ARCHIVES],
     keyKind: 'card',
     // Dolphin memory cards are per region and slot ("MemoryCardA.USA.raw",
     // or a "GC/USA/Card A" folder of .gci files).
@@ -83,7 +84,7 @@ export const PLATFORMS: PlatformDef[] = [
   {
     slug: 'wii',
     name: 'Wii',
-    romExtensions: ['.iso', '.wbfs', '.rvz', '.wia', '.gcz', '.wad'],
+    romExtensions: ['.iso', '.wbfs', '.rvz', '.wia', '.gcz', '.wad', ...ARCHIVES],
     keyKind: 'titleId',
     keyFormat: '{category:8}{titleLow:8}',
     defaultSaveLayout: 'title/{category}/{titleLow}/data/{file**}',
@@ -93,11 +94,13 @@ export const PLATFORMS: PlatformDef[] = [
   romPlatform('genesis', 'Sega Genesis / Mega Drive', ['.md', '.gen', '.bin', '.smd'], 29, 'Sega - Mega Drive - Genesis'),
   romPlatform('sms', 'Sega Master System', ['.sms'], 64, 'Sega - Master System - Mark III'),
   romPlatform('gg', 'Sega Game Gear', ['.gg'], 35, 'Sega - Game Gear'),
-  romPlatform('psx', 'PlayStation', ['.cue', '.chd', '.pbp', '.m3u', '.iso'], 7, 'Sony - PlayStation', false),
+  // Bare .bin/.img images run fine in most emulators. Track files a .cue or
+  // .gdi points at are skipped by the scanner (library/sheets.ts).
+  romPlatform('psx', 'PlayStation', ['.cue', '.chd', '.pbp', '.m3u', '.iso', '.bin', '.img'], 7, 'Sony - PlayStation'),
   {
     slug: 'ps2',
     name: 'PlayStation 2',
-    romExtensions: ['.iso', '.chd', '.cso', '.zso', '.gz'],
+    romExtensions: ['.iso', '.chd', '.cso', '.zso', '.gz', '.cue', '.bin', ...ARCHIVES],
     keyKind: 'card',
     keyFormat: '{card}',
     defaultSaveLayout: '{card}/{file**}',
@@ -107,7 +110,7 @@ export const PLATFORMS: PlatformDef[] = [
   {
     slug: 'psp',
     name: 'PlayStation Portable',
-    romExtensions: ['.iso', '.cso', '.chd', '.pbp'],
+    romExtensions: ['.iso', '.cso', '.chd', '.pbp', ...ARCHIVES],
     keyKind: 'saveDir',
     keyFormat: '{saveDir}',
     defaultSaveLayout: 'SAVEDATA/{saveDir}/{file**}',
@@ -117,7 +120,7 @@ export const PLATFORMS: PlatformDef[] = [
   {
     slug: 'dreamcast',
     name: 'Dreamcast',
-    romExtensions: ['.chd', '.gdi', '.cdi', '.cue', '.m3u'],
+    romExtensions: ['.chd', '.gdi', '.cdi', '.cue', '.m3u', ...ARCHIVES],
     keyKind: 'card',
     // VMUs are named by controller port and slot: A1, A2, B1, ...
     keyFormat: '{card}',

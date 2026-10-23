@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext, PlatformConfig } from '../context.js';
-import { now } from '../db.js';
+import { now, type Db } from '../db.js';
+import { getPlatform } from '../platforms.js';
 import { SaveStore, walkFiles } from '../saves/store.js';
 import { hashRom } from './hash.js';
-import { readDiscId, wiiTitleId } from './disc.js';
-import { read3dsTitleId } from './n3ds.js';
+import { parseDiscImage, readDiscId, wiiTitleId } from './disc.js';
+import { parse3dsTitleId, read3dsTitleId } from './n3ds.js';
 import { cleanTitle, fileStem } from './names.js';
+import { sheetTracks } from './sheets.js';
+import { readZipEntryHead } from './zip.js';
 
 export interface ScanStatus {
   running: boolean;
@@ -85,14 +88,12 @@ export class Scanner {
     const db = this.ctx.db;
     const slug = pc.def.slug;
 
+    const store = new SaveStore(this.ctx);
     if (pc.romPath && fs.existsSync(pc.romPath)) {
-      const exts = new Set(pc.def.romExtensions);
-      const files = [...walkFiles(pc.romPath)].filter((f) => exts.has(path.extname(f).toLowerCase()));
-      this.status.total += files.length;
-      const seen = new Set<string>();
+      const { roms, extras, other } = classifyFiles(pc.def.romExtensions, pc.romPath, [...walkFiles(pc.romPath)]);
+      this.status.total += roms.length;
 
-      for (const rel of files) {
-        seen.add(rel);
+      for (const rel of roms) {
         try {
           await this.scanRom(pc, rel);
         } catch (err) {
@@ -100,15 +101,52 @@ export class Scanner {
         }
         this.status.processed++;
       }
+      markMissing(db, 'roms', slug, new Set(roms));
 
-      const known = db.all<{ id: number; rel_path: string }>('SELECT id, rel_path FROM roms WHERE platform = $p', { $p: slug });
-      for (const r of known) {
-        const missing = seen.has(r.rel_path) ? 0 : 1;
-        db.run('UPDATE roms SET missing = $m WHERE id = $id', { $m: missing, $id: r.id });
-      }
+      for (const extra of extras) this.indexExtra(pc, extra);
+      markMissing(db, 'extras', slug, new Set(extras.map((e) => e.rel)));
+
+      this.status.savesImported += store.importBesideRoms(pc, other, roms).imported;
     }
 
-    this.status.savesImported += new SaveStore(this.ctx).importFromDisk(pc).imported;
+    this.status.savesImported += store.importFromDisk(pc).imported;
+  }
+
+  /** Record an extra and attach it to the game whose ROMs share its folder. */
+  private indexExtra(pc: PlatformConfig, extra: ExtraFile): void {
+    const db = this.ctx.db;
+    const st = fs.statSync(path.join(pc.romPath!, extra.rel));
+    let gameId: number | null = null;
+    if (extra.owner) {
+      gameId =
+        db.get<{ game_id: number }>(
+          `SELECT game_id FROM roms WHERE platform = $p AND missing = 0 AND game_id IS NOT NULL
+             AND substr(rel_path, 1, length($dir) + 1) = $dir || '/' ORDER BY id LIMIT 1`,
+          { $p: pc.def.slug, $dir: extra.owner },
+        )?.game_id ??
+        // No ROM in that folder: fall back to a game named like the folder. The
+        // dummy extension stops cleanTitle eating "Mr. Driller" as "Mr".
+        db.get<{ id: number }>('SELECT id FROM games WHERE platform = $p AND lower(title) = lower($t)', {
+          $p: pc.def.slug,
+          $t: cleanTitle(`${path.posix.basename(extra.owner)}.dir`),
+        })?.id ??
+        null;
+    }
+    db.run(
+      `INSERT INTO extras (platform, game_id, kind, rel_path, file_name, size, mtime, missing)
+       VALUES ($p, $g, $k, $r, $n, $size, $mtime, 0)
+       ON CONFLICT(platform, rel_path) DO UPDATE SET game_id = excluded.game_id, kind = excluded.kind,
+         size = excluded.size, mtime = excluded.mtime, missing = 0`,
+      {
+        $p: pc.def.slug,
+        $g: gameId,
+        $k: extra.kind,
+        $r: extra.rel,
+        $n: path.posix.basename(extra.rel),
+        $size: st.size,
+        $mtime: Math.floor(st.mtimeMs),
+      },
+    );
   }
 
   private async scanRom(pc: PlatformConfig, rel: string): Promise<void> {
@@ -180,12 +218,84 @@ export class Scanner {
   }
 }
 
+/**
+ * RomM-style side folders. Anything below one of these (at any depth) is an
+ * extra of the game whose folder holds it ("Zelda/mod/4k.zip"), or of the
+ * whole platform when it sits at the top ("firmware/bios.bin").
+ */
+const EXTRA_DIRS: Record<string, string> = {
+  dlc: 'dlc',
+  hack: 'hack',
+  hacks: 'hack',
+  mod: 'mod',
+  mods: 'mod',
+  patch: 'patch',
+  patches: 'patch',
+  update: 'update',
+  updates: 'update',
+  demo: 'demo',
+  manual: 'manual',
+  manuals: 'manual',
+  translation: 'translation',
+  prototype: 'prototype',
+  textures: 'texture',
+  extras: 'extra',
+  extra: 'extra',
+  bios: 'firmware',
+  firmware: 'firmware',
+};
+
+interface ExtraFile {
+  rel: string;
+  kind: string;
+  /** Folder that owns the extra ("" for the platform itself). */
+  owner: string;
+}
+
+/** Split a ROM folder's files into ROMs, extras, and everything else (candidate saves, readmes, ...). */
+export function classifyFiles(romExtensions: string[], root: string, files: string[]) {
+  const exts = new Set(romExtensions);
+  const extras: ExtraFile[] = [];
+  const rest: string[] = [];
+  for (const rel of files) {
+    const parts = rel.split('/');
+    const at = parts.slice(0, -1).findIndex((p) => EXTRA_DIRS[p.toLowerCase()]);
+    if (at >= 0) extras.push({ rel, kind: EXTRA_DIRS[parts[at]!.toLowerCase()]!, owner: parts.slice(0, at).join('/') });
+    else rest.push(rel);
+  }
+  const tracks = sheetTracks(root, rest.filter((f) => exts.has(path.extname(f).toLowerCase())));
+  const roms: string[] = [];
+  const other: string[] = [];
+  for (const rel of rest) {
+    if (exts.has(path.extname(rel).toLowerCase()) && !tracks.has(rel.toLowerCase())) roms.push(rel);
+    else other.push(rel);
+  }
+  return { roms, extras, other };
+}
+
+function markMissing(db: Db, table: 'roms' | 'extras', platform: string, seen: Set<string>): void {
+  const known = db.all<{ id: number; rel_path: string }>(`SELECT id, rel_path FROM ${table} WHERE platform = $p`, { $p: platform });
+  for (const r of known) {
+    db.run(`UPDATE ${table} SET missing = $m WHERE id = $id`, { $m: seen.has(r.rel_path) ? 0 : 1, $id: r.id });
+  }
+}
+
 /** Platform-native ID used to group discs into games and link title-keyed saves. */
 async function readTitleId(platform: string, file: string): Promise<string | null> {
   try {
-    if (platform === '3ds') return await read3dsTitleId(file);
+    const zipped = path.extname(file).toLowerCase() === '.zip';
+    if (platform === '3ds') {
+      if (!zipped) return await read3dsTitleId(file);
+      const entry = await readZipEntryHead(file, innerExts(platform), 0x200);
+      return entry ? parse3dsTitleId(entry.head) : null;
+    }
     if (platform === 'gc' || platform === 'wii') {
-      const disc = await readDiscId(file);
+      let disc;
+      if (!zipped) disc = await readDiscId(file);
+      else {
+        const entry = await readZipEntryHead(file, innerExts(platform), 0x300);
+        disc = entry ? parseDiscImage(entry.head) : null;
+      }
       if (!disc) return null;
       return disc.system === 'wii' ? wiiTitleId(disc.gameId) : disc.gameId.toLowerCase();
     }
@@ -193,4 +303,9 @@ async function readTitleId(platform: string, file: string): Promise<string | nul
     // Unreadable header: fall back to grouping by file name.
   }
   return null;
+}
+
+/** ROM extensions to look for inside an archive (archives themselves excluded). */
+function innerExts(platform: string): Set<string> {
+  return new Set((getPlatform(platform)?.romExtensions ?? []).filter((e) => e !== '.zip' && e !== '.7z'));
 }

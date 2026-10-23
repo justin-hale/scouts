@@ -198,6 +198,34 @@ const migrations: string[] = [
   );
   CREATE INDEX conflicts_open ON conflicts(save_id, device_id) WHERE resolved_at IS NULL;
   `,
+  `
+  -- Files in RomM-style side folders of the ROM folder (dlc/, mod/, hack/,
+  -- firmware/ ...). Listed and downloadable, but not ROMs: not hashed, not
+  -- matched against devices.
+  CREATE TABLE extras (
+    id        INTEGER PRIMARY KEY,
+    platform  TEXT NOT NULL,
+    game_id   INTEGER REFERENCES games(id) ON DELETE SET NULL,
+    kind      TEXT NOT NULL,
+    rel_path  TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    size      INTEGER NOT NULL,
+    mtime     INTEGER NOT NULL,
+    missing   INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(platform, rel_path)
+  );
+  CREATE INDEX extras_game ON extras(game_id);
+
+  -- Saves found next to ROMs, with the content last imported from each file.
+  -- Only a change to the file there makes a new version, so an old copy
+  -- beside the ROM never overrides a newer save that came from a device.
+  CREATE TABLE rom_folder_saves (
+    platform TEXT NOT NULL,
+    rel_path TEXT NOT NULL,
+    sha256   TEXT NOT NULL,
+    PRIMARY KEY (platform, rel_path)
+  );
+  `,
 ];
 
 function migrate(db: Db): void {

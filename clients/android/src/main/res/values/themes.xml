@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; this only sets the window colour shown before the first frame. -->
+    <style name="Theme.RomSafe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/stone_950</item>
+        <item name="android:colorBackground">@color/stone_950</item>
+        <item name="android:colorAccent">@color/brand</item>
+    </style>
+</resources>

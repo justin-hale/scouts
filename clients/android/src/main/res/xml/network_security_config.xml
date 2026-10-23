@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RomSafe servers usually run plain HTTP on the home network. Android can't
+  express "private IP ranges" here (domain-config only takes host names), so
+  cleartext is allowed in general and the app itself refuses http:// to any
+  host that doesn't resolve to a private, loopback or Tailscale (CGNAT) address.
+  See Lan.kt.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

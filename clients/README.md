@@ -43,5 +43,16 @@ after a save changes, instead of polling.
 
 ## Building
 
-These need the Android SDK and Gradle and aren't scaffolded yet. The server's
-`docs/sync-protocol.md` is the contract they will be built against.
+`clients/` is one Gradle build (Kotlin DSL, version catalog in `gradle/libs.versions.toml`). It
+needs JDK 21 and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `clients/local.properties`).
+
+```sh
+cd clients
+./gradlew :shared:allTests            # API client tests (JVM and Android host)
+./gradlew :android:assembleDebug      # android/build/outputs/apk/debug/android-debug.apk
+adb install -r android/build/outputs/apk/debug/android-debug.apk
+```
+
+The server usually runs plain HTTP on the LAN. The app allows cleartext only to hosts that resolve
+to private, loopback or Tailscale (100.64.0.0/10) addresses; anything else needs `https://`.
+`docs/sync-protocol.md` is the API contract.

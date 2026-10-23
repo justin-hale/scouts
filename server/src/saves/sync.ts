@@ -5,6 +5,7 @@ import type { PlatformDef } from '../platforms.js';
 import { parseSavePath, renderSavePath, type ParsedSave, type Profile } from '../profiles/profiles.js';
 import { normalizePath } from '../profiles/template.js';
 import { localStemForServer, serverStemForLocal } from '../roms/matching.js';
+import { isEmptySave } from './content.js';
 import { decodeSave } from './formats.js';
 import { SaveStore, type SaveRow } from './store.js';
 
@@ -21,7 +22,17 @@ export type SyncAction =
   | { action: 'download'; path: string; saveId: number; versionId: number; sha256: string; size: number }
   | { action: 'conflict'; path: string; saveId: number; serverVersionId: number; baseVersionId: number | null }
   | { action: 'pending-conflict'; path: string; saveId: number; conflictId: number }
-  | { action: 'unrecognized'; path: string };
+  | { action: 'unrecognized'; path: string }
+  | { action: 'empty'; path: string }
+  | { action: 'deleted'; path: string };
+
+export interface UploadResult {
+  /** 'empty': held no game data, kept in history only. 'deleted': a save deleted in the GUI; nothing stored. */
+  status: 'ok' | 'conflict' | 'empty' | 'deleted';
+  saveId?: number;
+  versionId?: number;
+  conflictId?: number;
+}
 
 interface StateRow {
   version_id: number;
@@ -73,7 +84,11 @@ export class SyncService {
     const key = parseSavePath(profile, def, localPath);
     if (!key) return null;
     if (def.keyKind === 'rom') {
-      key.gameKey = serverStemForLocal(this.ctx.db, deviceId, def.slug, key.gameKey) ?? key.gameKey;
+      const serverStem = serverStemForLocal(this.ctx.db, deviceId, def.slug, key.gameKey);
+      if (serverStem) key.gameKey = serverStem;
+      // Platforms often share one saves folder (RetroArch's). Once the device
+      // has reported its ROMs, a save only belongs here if one of them has its name.
+      else if (this.deviceHasRomInventory(deviceId, def.slug) && !this.deviceHasRomStem(deviceId, def.slug, key.gameKey)) return null;
     }
     return key;
   }
@@ -94,6 +109,25 @@ export class SyncService {
       $d: deviceId,
       $p: platform,
     });
+  }
+
+  private deviceHasRomStem(deviceId: number, platform: string, stem: string): boolean {
+    return !!this.ctx.db.get('SELECT 1 AS x FROM device_roms WHERE device_id = $d AND platform = $p AND stem = $s LIMIT 1', {
+      $d: deviceId,
+      $p: platform,
+      $s: stem,
+    });
+  }
+
+  /** Whether this exact content of a save was deleted in the GUI (see save_tombstones). */
+  private tombstoned(platform: string, key: ParsedSave, shas: string[]): boolean {
+    return shas.some(
+      (sha) =>
+        !!this.ctx.db.get(
+          'SELECT 1 AS x FROM save_tombstones WHERE platform = $p AND game_key = $k AND file = $f AND sha256 = $s',
+          { $p: platform, $k: key.gameKey, $f: key.file, $s: sha },
+        ),
+    );
   }
 
   private state(deviceId: number, slot: string, saveId: number): StateRow | undefined {
@@ -134,14 +168,17 @@ export class SyncService {
         actions.push({ action: 'unrecognized', path });
         continue;
       }
+      const sha = f.sha256.toLowerCase();
+      const empty = isEmptyHash(sha, Number(f.size));
       const save = this.store.findSave(platform, key);
       if (!save?.current_version_id) {
-        actions.push({ action: 'upload', path, baseVersionId: null });
+        if (this.tombstoned(platform, key, [sha])) actions.push({ action: 'deleted', path });
+        else if (empty) actions.push({ action: 'empty', path });
+        else actions.push({ action: 'upload', path, baseVersionId: null });
         continue;
       }
       handled.add(save.id);
       const current = this.store.getVersion(save.current_version_id)!;
-      const sha = f.sha256.toLowerCase();
       const state = this.state(deviceId, slot, save.id);
       const conflict = this.openConflict(deviceId, save.id);
 
@@ -153,6 +190,10 @@ export class SyncService {
         actions.push({ action: 'ok', path, saveId: save.id, versionId: current.id });
       } else if (conflict) {
         actions.push({ action: 'pending-conflict', path, saveId: save.id, conflictId: conflict.id });
+      } else if (empty && !this.store.isEmptyVersion(platform, current.sha256)) {
+        // The emulator made a blank save (a fresh install, or the game booted
+        // before a download): never let it replace real progress.
+        actions.push({ action: 'download', path, saveId: save.id, versionId: current.id, sha256: current.sha256, size: current.size });
       } else if (state && state.sha256 === sha) {
         actions.push({ action: 'download', path, saveId: save.id, versionId: current.id, sha256: current.sha256, size: current.size });
       } else if (state && state.version_id === current.id) {
@@ -191,7 +232,7 @@ export class SyncService {
     baseVersionId: number | null,
     asConflict: boolean,
     slot = '',
-  ): { status: 'ok' | 'conflict'; saveId: number; versionId: number; conflictId?: number } {
+  ): UploadResult {
     const { def, profile } = this.mapping(deviceId, platform, slot);
     const key = this.toKey(deviceId, def, profile, localPath);
     if (!key) throw new SyncError(`"${localPath}" is not a save file for profile ${profile.id}`);
@@ -201,13 +242,31 @@ export class SyncService {
     const raw = decodeSave(key.format, data);
     const sha = sha256Buffer(raw);
 
-    return this.ctx.db.tx(() => {
-      const save = this.store.findOrCreateSave(platform, key);
+    return this.ctx.db.tx((): UploadResult => {
+      const existing = this.store.findSave(platform, key);
+      if (!existing?.current_version_id) {
+        if (this.tombstoned(platform, key, [sha, deviceSha])) return { status: 'deleted' };
+        // New content for a deleted save: it's a save again, so forget the deletion.
+        this.ctx.db.run('DELETE FROM save_tombstones WHERE platform = $p AND game_key = $k AND file = $f', {
+          $p: platform,
+          $k: key.gameKey,
+          $f: key.file,
+        });
+      }
+      const save = existing ?? this.store.findOrCreateSave(platform, key);
       const current = save.current_version_id ? this.store.getVersion(save.current_version_id) : undefined;
 
       if (current?.sha256 === sha) {
         this.setState(deviceId, slot, save.id, current.id, deviceSha);
         return { status: 'ok' as const, saveId: save.id, versionId: current.id };
+      }
+      if (current && isEmptySave(platform, raw) && !this.store.isEmptyVersion(platform, current.sha256)) {
+        // Kept in the history, but no sync state: the next plan downloads the real save.
+        const known = this.ctx.db.get('SELECT 1 AS x FROM save_versions WHERE save_id = $s AND sha256 = $sha', { $s: save.id, $sha: sha });
+        if (!known) {
+          this.store.addVersion(save, raw, { deviceId, makeCurrent: false, note: 'Empty save from device; the current save was kept' });
+        }
+        return { status: 'empty', saveId: save.id, versionId: current.id };
       }
       if (!current || (!asConflict && current.id === baseVersionId && !this.openConflict(deviceId, save.id))) {
         const v = this.store.addVersion(save, raw, { deviceId, makeCurrent: true, parentVersionId: current?.id ?? null });
@@ -262,4 +321,22 @@ export class SyncService {
       });
     });
   }
+}
+
+const emptyHashCache = new Map<number, Set<string>>();
+
+/**
+ * Whether a file of this size and hash is blank: no bytes, or all 0x00 or all
+ * 0xFF (what emulators write before a game saves). The plan only sees hashes,
+ * so compare against the hashes of those blank files.
+ */
+function isEmptyHash(sha: string, size: number): boolean {
+  if (!Number.isSafeInteger(size) || size < 0 || size > 32 * 1024 * 1024) return false;
+  let hashes = emptyHashCache.get(size);
+  if (!hashes) {
+    hashes = new Set([sha256Buffer(Buffer.alloc(size, 0)), sha256Buffer(Buffer.alloc(size, 0xff))]);
+    if (emptyHashCache.size > 64) emptyHashCache.clear();
+    emptyHashCache.set(size, hashes);
+  }
+  return hashes.has(sha);
 }

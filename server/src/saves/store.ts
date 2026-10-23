@@ -183,6 +183,14 @@ export class SaveStore {
     const db = this.ctx.db;
     const target = this.serverPath(save);
     const shas = db.all<{ sha256: string }>('SELECT DISTINCT sha256 FROM save_versions WHERE save_id = $id', { $id: saveId });
+    // Remember every form of the save devices may still hold: the raw versions
+    // and the device-side hashes (which differ for wrapped formats like .dsv).
+    db.run(
+      `INSERT OR IGNORE INTO save_tombstones (platform, game_key, file, sha256, deleted_at)
+       SELECT $p, $k, $f, sha256, $t FROM save_versions WHERE save_id = $id
+       UNION SELECT $p, $k, $f, sha256, $t FROM device_save_state WHERE save_id = $id`,
+      { $p: save.platform, $k: save.game_key, $f: save.file, $t: now(), $id: saveId },
+    );
     db.run('DELETE FROM saves WHERE id = $id', { $id: saveId });
     if (target) {
       fs.rmSync(target, { force: true });

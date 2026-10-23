@@ -101,9 +101,18 @@ POST /api/device/saves/plan
 | `download` | fetch `versionId`, verify `sha256`, write to `path`, then `POST /saves/ack` |
 | `conflict` | `PUT /saves/upload` with `base = baseVersionId` and `conflict=1`, then tell the user |
 | `pending-conflict` | leave the file alone until the user resolves it in the GUI |
-| `unrecognized` | not a save file for this profile; ignore |
+| `unrecognized` | not a save file for this profile, or (ROM-keyed platforms) not for a ROM in the device's inventory; ignore |
+| `empty` | the file holds no game data yet (all `0x00`/`0xFF`) and the server has nothing for it; ignore |
+| `deleted` | this exact file was deleted in the GUI; leave it alone (it syncs again once its content changes) |
 
 Download actions can also name files the device doesn't have yet. Create parent folders as needed.
+
+A blank file never replaces a save with data: if the device's copy is empty and the server's
+isn't, the plan says `download`, whatever the device's sync state.
+
+Once a device has sent a ROM inventory for a ROM-keyed platform, only saves named after one of
+its ROMs belong to that platform. That keeps a shared folder (RetroArch's `saves`) from
+uploading every platform's saves under each one.
 
 ### 2. Upload
 
@@ -111,11 +120,14 @@ Download actions can also name files the device doesn't have yet. Create parent 
 PUT /api/device/saves/upload?platform=gba&path=Metroid%20Fusion.srm&base=41[&conflict=1][&slot=2]
 Content-Type: application/octet-stream
 <bytes>
-→ { "status": "ok" | "conflict", "saveId": 7, "versionId": 42, "conflictId"?: 3 }
+→ { "status": "ok" | "conflict" | "empty" | "deleted", "saveId": 7, "versionId": 42, "conflictId"?: 3 }
 ```
 
 If the server moved on since `base`, the upload is stored as a side version and a conflict is
-opened (`status: "conflict"`). Uploads are never lost.
+opened (`status: "conflict"`). Uploads are never lost. `empty` means the file held no game data,
+so it went into the history but the current save was kept (the next plan downloads it).
+`deleted` means the file is a save deleted in the GUI; nothing was stored, and there is no
+`saveId`.
 
 ### 3. Download and acknowledge
 

@@ -267,6 +267,19 @@ const migrations: string[] = [
   DROP TABLE device_save_state;
   ALTER TABLE device_save_state_v2 RENAME TO device_save_state;
   `,
+  `
+  -- Saves deleted in the GUI. Devices that still have one of these exact
+  -- files are told it was deleted instead of uploading it again; a file with
+  -- new content (the game was played since) syncs as a new save.
+  CREATE TABLE save_tombstones (
+    platform   TEXT NOT NULL,
+    game_key   TEXT NOT NULL,
+    file       TEXT NOT NULL,
+    sha256     TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL,
+    PRIMARY KEY (platform, game_key, file, sha256)
+  );
+  `,
 ];
 
 function migrate(db: Db): void {

@@ -284,3 +284,79 @@ test('two emulators for one platform on one device sync as separate slots', asyn
   const unknown = await handheld.call('POST', '/api/device/saves/plan', { platform: '3ds', slot: '9', files: [] });
   assert.equal(unknown.status, 400);
 });
+
+test('device sync never lets an empty save replace one with data', async () => {
+  const handheld = await srv.pairDevice('Empty Tester');
+  await handheld.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'gba', profile: 'mgba' }] });
+  await handheld.call('POST', '/api/device/roms/inventory', { platform: 'gba', files: [{ path: ROM, size: romBytes.length }] });
+  const blank = Buffer.alloc(32 * 1024, 0xff);
+
+  // A fresh emulator made a blank save before the first sync: take the server's.
+  let actions = await plan(handheld, 'gba', { 'Metroid Fusion (USA).sav': blank });
+  assert.equal(actions[0].action, 'download');
+  const real = await handheld.download(actions[0].versionId);
+  await handheld.call('POST', '/api/device/saves/ack', { saveId: actions[0].saveId, versionId: actions[0].versionId });
+
+  // Even after agreeing on the real save, a blank file is never uploaded.
+  actions = await plan(handheld, 'gba', { 'Metroid Fusion (USA).sav': blank });
+  assert.equal(actions[0].action, 'download');
+  const up = await handheld.upload('gba', 'Metroid Fusion (USA).sav', blank, actions[0].versionId);
+  assert.equal(up.status, 'empty');
+  actions = await plan(handheld, 'gba', { 'Metroid Fusion (USA).sav': real });
+  assert.equal(actions[0].action, 'ok', 'the real save is still current');
+
+  // A blank save for a game the server has nothing for isn't uploaded either.
+  await handheld.call('POST', '/api/device/roms/inventory', {
+    platform: 'gba',
+    files: [
+      { path: ROM, size: romBytes.length },
+      { path: 'Homebrew.gba', size: 10 },
+    ],
+  });
+  actions = await plan(handheld, 'gba', { 'Homebrew.sav': Buffer.alloc(0) });
+  assert.equal(actions[0].action, 'empty');
+});
+
+test('saves only belong to a ROM-keyed platform if the device has that ROM', async () => {
+  // RetroArch keeps every platform's saves in one folder; this device reported
+  // only Metroid Fusion for GBA, so a GBC game's save isn't a GBA save.
+  const handheld = await srv.pairDevice('Shared Folder Tester');
+  await handheld.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'gba', profile: 'retroarch' }] });
+  await handheld.call('POST', '/api/device/roms/inventory', { platform: 'gba', files: [{ path: 'Metroid Fusion.gba', size: 1 }] });
+  const actions = await plan(handheld, 'gba', {
+    'Metroid Fusion.srm': Buffer.from('gba progress'),
+    'Pokemon Crystal.srm': Buffer.from('gbc progress'),
+  });
+  assert.deepEqual(
+    actions.map((a) => [a.path, a.action]),
+    [
+      ['Metroid Fusion.srm', 'conflict'],
+      ['Pokemon Crystal.srm', 'unrecognized'],
+    ],
+  );
+});
+
+test('a save deleted in the GUI is not uploaded again by a device that still has it', async () => {
+  const handheld = await srv.pairDevice('Tombstone Tester');
+  await handheld.call('PUT', '/api/device/mappings', { mappings: [{ platform: 'ps2', profile: 'pcsx2' }] });
+  const card = Buffer.alloc(4096, 5);
+  card[0] = 1;
+  assert.equal((await plan(handheld, 'ps2', { 'Mcd002.ps2': card }))[0].action, 'upload');
+  const up = await handheld.upload('ps2', 'Mcd002.ps2', card, null);
+  assert.equal(up.status, 'ok');
+
+  const del = await srv.admin('DELETE', `/api/saves/${up.saveId}`);
+  assert.equal(del.status, 200);
+
+  assert.equal((await plan(handheld, 'ps2', { 'Mcd002.ps2': card }))[0].action, 'deleted');
+  assert.equal((await handheld.upload('ps2', 'Mcd002.ps2', card, null)).status, 'deleted');
+  const list = await srv.admin('GET', '/api/saves?platform=ps2');
+  assert.ok(!list.body.some((s: any) => s.gameKey === 'Mcd002'), 'the deleted save stays deleted');
+
+  // Played again since: that's new progress, so it syncs as a save again.
+  const newer = Buffer.from(card);
+  newer[1] = 2;
+  assert.equal((await plan(handheld, 'ps2', { 'Mcd002.ps2': newer }))[0].action, 'upload');
+  assert.equal((await handheld.upload('ps2', 'Mcd002.ps2', newer, null)).status, 'ok');
+  assert.equal((await plan(handheld, 'ps2', { 'Mcd002.ps2': card }))[0].action !== 'deleted', true);
+});

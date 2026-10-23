@@ -10,6 +10,7 @@ export {
   faClockRotateLeft,
   faCloudArrowUp,
   faDownload,
+  faFileZipper,
   faFloppyDisk,
   faGamepad,
   faGear,

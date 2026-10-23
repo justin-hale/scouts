@@ -5,9 +5,18 @@ import { now } from '../db.js';
 import { sha256Buffer } from '../library/hash.js';
 import { fileStem } from '../library/names.js';
 import { getPlatform } from '../platforms.js';
-import { unzipBuffer } from '../library/zip.js';
-import { layoutProfile, normalizeGameKey, parseSavePath, renderSavePath, type ParsedSave, type SaveKey } from '../profiles/profiles.js';
+import { unzipBuffer, type ZipInput } from '../library/zip.js';
+import {
+  layoutProfile,
+  normalizeGameKey,
+  parseSavePath,
+  renderSavePath,
+  type ParsedSave,
+  type Profile,
+  type SaveKey,
+} from '../profiles/profiles.js';
 import { isSafeRelative } from '../profiles/template.js';
+import { isEmptySave } from './content.js';
 import { decodeSave } from './formats.js';
 
 export interface SaveRow {
@@ -276,11 +285,59 @@ export class SaveStore {
 
     if (keys.length === 0) throw new UploadError('No save files found in the upload');
     const changed: SaveKey[] = [];
+    let empty = 0;
     for (const { key, data } of keys) {
       key.gameKey = normalizeGameKey(def, key.gameKey);
-      if (this.importData(def.slug, key, data, note)) changed.push(key);
+      const result = this.importDataResult(def.slug, key, data, note);
+      if (result === 'added') changed.push(key);
+      if (result === 'empty') empty++;
+    }
+    if (empty && !changed.length) {
+      throw new UploadError("That save is empty (the game never wrote to it), so the current save was kept. It's in the history if you need it.");
     }
     return changed;
+  }
+
+  /** Whether a stored version holds no game data (cached: blobs never change). */
+  isEmptyVersion(platform: string, sha: string): boolean {
+    const key = `${platform}:${sha}`;
+    let empty = emptyCache.get(key);
+    if (empty === undefined) {
+      try {
+        empty = isEmptySave(platform, fs.readFileSync(this.blobPath(sha)));
+      } catch {
+        empty = false;
+      }
+      emptyCache.set(key, empty);
+    }
+    return empty;
+  }
+
+  /**
+   * The current version of every matching save, laid out for a zip. With an
+   * emulator profile, paths are where that emulator expects them
+   * ("Game.srm"); saves it can't place (or no profile) use the server's own
+   * save layout. Paths are prefixed by platform unless exporting one game.
+   */
+  *exportEntries(opts: { platform?: string; gameId?: number; profile?: Profile }): Generator<ZipInput> {
+    const rows = this.ctx.db.all<SaveRow & { sha256: string; created_at: number }>(
+      `SELECT s.*, v.sha256, v.created_at FROM saves s JOIN save_versions v ON v.id = s.current_version_id
+       WHERE ($p IS NULL OR s.platform = $p) AND ($g IS NULL OR s.game_id = $g) ORDER BY s.platform, s.game_key, s.file`,
+      { $p: opts.platform ?? null, $g: opts.gameId ?? null },
+    );
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const pc = this.ctx.platform(row.platform);
+      if (!pc) continue;
+      const key = { gameKey: row.game_key, file: row.file };
+      const fromProfile = opts.profile ? renderSavePath(opts.profile, pc.def, key) : null;
+      const rel = fromProfile ?? renderSavePath(layoutProfile(pc.def, pc.saveLayout), pc.def, key);
+      if (!rel) continue;
+      const name = opts.gameId ? rel : `${row.platform}/${rel}`;
+      if (seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      yield { name, data: fs.readFileSync(this.blobPath(row.sha256)), mtime: new Date(row.created_at) };
+    }
   }
 
   private parseWithProfiles(pc: PlatformConfig, fileName: string): ParsedSave | null {
@@ -293,16 +350,34 @@ export class SaveStore {
 
   /** Make `data` the current version of a save unless it already is. Returns true if a version was added. */
   private importData(platform: string, key: SaveKey, data: Buffer, note: string): boolean {
+    return this.importDataResult(platform, key, data, note) === 'added';
+  }
+
+  /**
+   * Make `data` the current version of a save unless it already is. An empty
+   * save (isEmptySave) never replaces one that holds data: it's kept in the
+   * history, and the real save is written back to the save folder in case
+   * the empty file came from there.
+   */
+  private importDataResult(platform: string, key: SaveKey, data: Buffer, note: string): 'added' | 'same' | 'empty' {
     const sha = sha256Buffer(data);
     return this.ctx.db.tx(() => {
       const save = this.findOrCreateSave(platform, key);
       const current = save.current_version_id ? this.getVersion(save.current_version_id) : undefined;
-      if (current?.sha256 === sha) return false;
+      if (current?.sha256 === sha) return 'same';
+      if (current && isEmptySave(platform, data) && !isEmptySave(platform, fs.readFileSync(this.blobPath(current.sha256)))) {
+        const known = this.ctx.db.get('SELECT 1 FROM save_versions WHERE save_id = $s AND sha256 = $sha', { $s: save.id, $sha: sha });
+        if (!known) this.addVersion(save, data, { note: `${note}; empty, so the current save was kept`, makeCurrent: false });
+        this.mirror(save.id);
+        return 'empty';
+      }
       this.addVersion(save, data, { note, makeCurrent: true });
-      return true;
+      return 'added';
     });
   }
 }
+
+const emptyCache = new Map<string, boolean>();
 
 function unzipUpload(data: Buffer): { name: string; data: Buffer }[] {
   try {

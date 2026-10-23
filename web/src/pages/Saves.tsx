@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { get, type Platform, type SaveListItem } from '../api';
+import { ExportSaves } from '../components/ExportSaves';
 import { faBoxArchive, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
 import { Badge, Button, ErrorNote, PageHeader, useApi } from '../components/ui';
@@ -56,6 +57,7 @@ export default function Saves() {
         subtitle="Every save the server holds. Memory cards (GameCube, PS2, Dreamcast) hold many games, so they live here rather than on a game page."
         actions={
           <>
+            <ExportSaves platform={platform || undefined} />
             <Button variant={unmatchedOnly ? 'primary' : 'default'} onClick={() => setFilter({ unmatched: !unmatchedOnly })}>
               <Icon icon={faBoxArchive} /> Unmatched ({unmatchedCount})
             </Button>

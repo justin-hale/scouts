@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { coverUrl, get, patch, post, type Candidate, type GameDetail } from '../api';
 import { CoverPicker } from '../components/CoverPicker';
+import { ExportSaves } from '../components/ExportSaves';
 import { faArrowLeft, faCloudArrowUp, faDownload, faImage, faPuzzlePiece, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
 import { SaveUpload } from '../components/uploads';
@@ -80,9 +81,12 @@ export default function Game() {
 
       <div className="mt-10 mb-3 flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-stone-100">Saves</h2>
-        <Button onClick={() => setUploadingSave(true)}>
-          <Icon icon={faCloudArrowUp} /> Upload save
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {g.saves.length > 0 && <ExportSaves gameId={g.id} label="Download all" />}
+          <Button onClick={() => setUploadingSave(true)}>
+            <Icon icon={faCloudArrowUp} /> Upload save
+          </Button>
+        </div>
       </div>
       {g.saves.length === 0 ? (
         <p className="text-sm text-stone-500">No saves yet. They appear here once a device syncs or a file is found in the server save folder.</p>

@@ -17,7 +17,16 @@ export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?:
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           {label && <div className="mb-0.5 text-sm font-medium text-stone-100">{label}</div>}
-          <div className="font-mono text-sm text-stone-300">{save.file}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm text-stone-300" title={`Stored on the server as ${save.file}`}>
+              {save.downloadName}
+            </span>
+            {save.empty && (
+              <span title="This save holds no game data yet: the game never wrote to it, or it's a blank memory card.">
+                <Badge tone="red">empty</Badge>
+              </span>
+            )}
+          </div>
           <div className="mt-1 text-xs text-stone-500">
             {formatBytes(save.size)} · updated {formatTime(save.updatedAt)} {save.updatedBy && `by ${save.updatedBy}`} · {save.versionCount}{' '}
             version{save.versionCount === 1 ? '' : 's'}

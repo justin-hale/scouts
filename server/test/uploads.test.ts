@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
+import { unzipBuffer } from '../src/library/zip.js';
+import { isEmptySave } from '../src/saves/content.js';
 import { gcDisc, gci, makeZip, ncsd, startServer, type TestServer } from './helpers.js';
 
 let srv: TestServer;
@@ -73,7 +75,7 @@ test('a DS save uploaded under any name is keyed by the ROM and loses its DeSmuM
   await srv.services.scanner.run([srv.services.ctx.platform('nds')!]);
   const id = await gameId('nds', 'Pokemon - Black Version 2');
 
-  const raw = Buffer.alloc(512, 7);
+  const raw = Buffer.from(Array.from({ length: 512 }, (_, i) => i % 251));
   const dsv = Buffer.concat([raw, Buffer.from('|<--Snip above here to create a raw sav by excluding this DeSmuME savedata footer:')]);
   const res = await put(`/api/games/${id}/saves/upload?name=${encodeURIComponent('Pokemon - Black Version 2 [2026-10-22_14-07-29].srm')}`, dsv);
   assert.equal(res.status, 200);
@@ -82,6 +84,26 @@ test('a DS save uploaded under any name is keyed by the ROM and loses its DeSmuM
 
   const bad = await put(`/api/games/${id}/saves/upload?name=notes.txt`, 'x');
   assert.equal(bad.status, 400);
+
+  // A blank save (the game never wrote to it) is kept in history but never replaces real data.
+  const blank = await put(`/api/games/${id}/saves/upload?name=blank.sav`, Buffer.alloc(512, 0xff));
+  assert.equal(blank.status, 400);
+  assert.deepEqual(fs.readFileSync(file('saves/nds/Pokemon - Black Version 2/battery.sav')), raw);
+  const { body: game } = await srv.admin('GET', `/api/games/${id}`);
+  assert.equal(game.saves[0].versionCount, 2);
+  assert.equal(game.saves[0].empty, false);
+  assert.equal(game.saves[0].downloadName, 'Pokemon - Black Version 2.sav');
+});
+
+test('empty saves are recognised', () => {
+  assert.equal(isEmptySave('gba', Buffer.alloc(1024, 0xff)), true);
+  assert.equal(isEmptySave('gba', Buffer.from([0xff, 0x01, 0xff])), false);
+  const card = Buffer.alloc(128 * 1024);
+  card.write('MC', 0, 'latin1');
+  for (let i = 1; i <= 15; i++) card[i * 0x80] = 0xa0;
+  assert.equal(isEmptySave('psx', card), true);
+  card[3 * 0x80] = 0x51; // one block in use
+  assert.equal(isEmptySave('psx', card), false);
 });
 
 test('3DS saves upload as a zip of the save folder', async () => {
@@ -113,6 +135,26 @@ test('GameCube GCI uploads go on card A of their region', async () => {
   assert.ok(fs.existsSync(file('saves/gc/USA/Card A/01-GZLE-gczelda.gci')));
   const { body } = await srv.admin('GET', `/api/games/${id}`);
   assert.equal(body.saves.length, 1);
+});
+
+test('saves export as a zip, in the server layout or an emulator profile', async () => {
+  const names = async (qs: string) => {
+    const res = await srv.app.inject({ method: 'GET', url: `/api/saves/export.zip${qs}`, headers: { cookie: srv.cookie } });
+    assert.equal(res.statusCode, 200);
+    return unzipBuffer(res.rawPayload).map((e) => e.name).sort();
+  };
+  const all = await names('');
+  assert.ok(all.includes('nds/Pokemon - Black Version 2/battery.sav'));
+  assert.ok(all.includes('gc/USA/Card A/01-GZLE-gczelda.gci'));
+
+  const retro = await names('?profile=retroarch');
+  assert.ok(retro.includes('nds/Pokemon - Black Version 2.srm'));
+  // RetroArch has no 3DS layout, so those keep the server's.
+  assert.ok(retro.some((n) => n.startsWith('3ds/Nintendo 3DS/') && n.endsWith('/00000001/main')));
+
+  const id = await gameId('nds', 'Pokemon - Black Version 2');
+  assert.deepEqual(await names(`?gameId=${id}&profile=generic-sav`), ['Pokemon - Black Version 2.sav']);
+  assert.deepEqual(await names('?platform=gc'), ['gc/USA/Card A/01-GZLE-gczelda.gci']);
 });
 
 test('covers can be uploaded, and picked only from known image hosts', async () => {

@@ -7,6 +7,8 @@ import { now } from '../db.js';
 import type { Candidate } from '../metadata/providers.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
+import { zipStream } from '../library/zip.js';
+import { downloadName } from '../saves/content.js';
 import { saveLabel } from '../saves/labels.js';
 import { PUBLIC_SETTINGS, publicSettings, setSetting } from '../settings.js';
 
@@ -24,6 +26,13 @@ export const adminRoutes =
   ({ ctx, sync, scanner, metadata }: Services): FastifyPluginAsync =>
   async (app) => {
     const db = ctx.db;
+
+    /** Extra fields the GUI shows for a save: its download name and whether it's empty. */
+    const describeSave = <T extends { platform: string; gameKey: string; file: string; sha256: string | null }>(s: T) => ({
+      ...s,
+      downloadName: downloadName(s.platform, s.gameKey, s.file),
+      empty: s.sha256 ? sync.store.isEmptyVersion(s.platform, s.sha256) : false,
+    });
 
     // Endpoints shared with devices: ROM and save version downloads.
     app.register(async (shared) => {
@@ -57,7 +66,7 @@ export const adminRoutes =
         const save = sync.store.getSave(v.save_id)!;
         reply.header('Content-Type', 'application/octet-stream');
         reply.header('X-Save-Sha256', v.sha256);
-        reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.posix.basename(save.file))}`);
+        reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName(save.platform, save.game_key, save.file))}`);
         return reply.send(fs.createReadStream(sync.store.blobPath(v.sha256)));
       });
     });
@@ -183,16 +192,18 @@ export const adminRoutes =
            FROM roms WHERE game_id = $id ORDER BY file_name`,
           { $id: id },
         );
-        const saves = db.all(
-          `SELECT s.id, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
-             v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
-             (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
-           FROM saves s
-           LEFT JOIN save_versions v ON v.id = s.current_version_id
-           LEFT JOIN devices d ON d.id = v.device_id
-           WHERE s.game_id = $id ORDER BY s.file`,
-          { $id: id },
-        );
+        const saves = db
+          .all<{ platform: string; gameKey: string; file: string; sha256: string | null }>(
+            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
+               v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
+               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
+             FROM saves s
+             LEFT JOIN save_versions v ON v.id = s.current_version_id
+             LEFT JOIN devices d ON d.id = v.device_id
+             WHERE s.game_id = $id ORDER BY s.file`,
+            { $id: id },
+          )
+          .map(describeSave);
         const extras = db.all(
           `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
            FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
@@ -252,7 +263,7 @@ export const adminRoutes =
 
       admin.get<{ Querystring: { platform?: string } }>('/saves', async (req) =>
         db
-          .all<{ platform: string; file: string; gameId: number | null; sha256: string }>(
+          .all<{ platform: string; gameKey: string; file: string; gameId: number | null; sha256: string }>(
             `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
                g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
                (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
@@ -264,8 +275,25 @@ export const adminRoutes =
              ORDER BY s.platform, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
             { $p: req.query.platform ?? null },
           )
-          .map((s) => ({ ...s, label: s.gameId ? null : saveLabel(s.platform, s.file, sync.store.blobPath(s.sha256)) })),
+          .map((s) => ({ ...describeSave(s), label: s.gameId ? null : saveLabel(s.platform, s.file, sync.store.blobPath(s.sha256)) })),
       );
+
+      // Current saves as a zip: everything, one platform, or one game; laid out for an emulator profile if given.
+      admin.get<{ Querystring: { platform?: string; gameId?: string; profile?: string } }>('/saves/export.zip', async (req, reply) => {
+        const { platform, profile: profileId } = req.query;
+        const gameId = req.query.gameId ? int(req.query.gameId) : undefined;
+        const profile = profileId ? ctx.profile(profileId) : undefined;
+        if (profileId && !profile) return notFound(reply, 'Unknown profile');
+        let name = 'romsafe-saves';
+        if (gameId) {
+          const g = db.get<{ title: string }>('SELECT title FROM games WHERE id = $id', { $id: gameId });
+          if (!g) return notFound(reply, 'Game not found');
+          name = `${g.title} saves`;
+        } else if (platform) name = `romsafe-saves-${platform}`;
+        reply.header('Content-Type', 'application/zip');
+        reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${name.replace(/[\\/:*?"<>|]/g, '_')}.zip`)}`);
+        return reply.send(zipStream(sync.store.exportEntries({ platform, gameId, profile })));
+      });
 
       admin.get<IdParams>('/saves/:id/versions', async (req) =>
         db.all(

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import zlib from 'node:zlib';
 
 const EOCD = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
@@ -143,6 +144,79 @@ export function unzipBuffer(zip: Buffer, maxTotal = 256 * 1024 * 1024): { name: 
     out.push({ name: e.name.replace(/\\/g, '/'), data });
   }
   return out;
+}
+
+export interface ZipInput {
+  name: string;
+  data: Buffer;
+  mtime?: Date;
+}
+
+/**
+ * Write a zip as a stream, one deflated entry at a time, so exporting every
+ * save never holds the whole archive in memory. Entries are expected to be
+ * small (saves), and the archive under 4 GB (no Zip64).
+ */
+export function zipStream(entries: Iterable<ZipInput>): Readable {
+  return Readable.from(
+    (function* () {
+      const central: Buffer[] = [];
+      let offset = 0;
+      let count = 0;
+      for (const e of entries) {
+        const name = Buffer.from(e.name, 'utf8');
+        const comp = zlib.deflateRawSync(e.data);
+        const crc = zlib.crc32(e.data);
+        const { time, date } = dosTime(e.mtime ?? new Date());
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(LOCAL, 0);
+        local.writeUInt16LE(20, 4);
+        local.writeUInt16LE(0x0800, 6); // UTF-8 names
+        local.writeUInt16LE(8, 8);
+        local.writeUInt16LE(time, 10);
+        local.writeUInt16LE(date, 12);
+        local.writeUInt32LE(crc, 14);
+        local.writeUInt32LE(comp.length, 18);
+        local.writeUInt32LE(e.data.length, 22);
+        local.writeUInt16LE(name.length, 26);
+        const cd = Buffer.alloc(46);
+        cd.writeUInt32LE(CENTRAL, 0);
+        cd.writeUInt16LE(20, 4);
+        cd.writeUInt16LE(20, 6);
+        cd.writeUInt16LE(0x0800, 8);
+        cd.writeUInt16LE(8, 10);
+        cd.writeUInt16LE(time, 12);
+        cd.writeUInt16LE(date, 14);
+        cd.writeUInt32LE(crc, 16);
+        cd.writeUInt32LE(comp.length, 20);
+        cd.writeUInt32LE(e.data.length, 24);
+        cd.writeUInt16LE(name.length, 28);
+        cd.writeUInt32LE(offset, 42);
+        central.push(cd, name);
+        yield Buffer.concat([local, name, comp]);
+        offset += 30 + name.length + comp.length;
+        count++;
+        if (offset > SAT32 || count >= 0xffff) throw new Error('Export too large for a zip');
+      }
+      const cdBuf = Buffer.concat(central);
+      const end = Buffer.alloc(22);
+      end.writeUInt32LE(0x06054b50, 0);
+      end.writeUInt16LE(count, 8);
+      end.writeUInt16LE(count, 10);
+      end.writeUInt32LE(cdBuf.length, 12);
+      end.writeUInt32LE(offset, 16);
+      yield Buffer.concat([cdBuf, end]);
+    })(),
+    { objectMode: false },
+  );
+}
+
+function dosTime(d: Date): { time: number; date: number } {
+  const year = Math.max(1980, d.getFullYear());
+  return {
+    time: (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2),
+    date: ((year - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
+  };
 }
 
 /** Zip64 extra field: 64-bit values for whichever header fields were saturated, in this order. */

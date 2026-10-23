@@ -120,6 +120,10 @@ export interface SaveSummary {
   updatedAt: number | null;
   updatedBy: string | null;
   versionCount: number;
+  /** What the file is called when downloaded ("Game.sav" for a stored "battery.sav"). */
+  downloadName: string;
+  /** The current version holds no game data (never written, or an empty memory card). */
+  empty: boolean;
 }
 
 export interface SaveListItem extends SaveSummary {

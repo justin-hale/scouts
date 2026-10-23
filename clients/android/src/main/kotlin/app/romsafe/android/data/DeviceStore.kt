@@ -2,6 +2,7 @@ package app.romsafe.android.data
 
 import android.content.Context
 import androidx.core.content.edit
+import app.romsafe.android.sync.SyncReport
 import app.romsafe.shared.api.RomSafeApi
 import kotlinx.serialization.Serializable
 
@@ -56,7 +57,13 @@ class DeviceStore(context: Context) {
         remove(KEY_TOKEN)
         remove(KEY_SETUPS)
         remove(KEY_LEGACY_MAPPINGS)
+        remove(KEY_SYNC_REPORT)
     }
+
+    fun lastSyncReport(): SyncReport? =
+        prefs.getString(KEY_SYNC_REPORT, null)?.let { runCatching { json.decodeFromString<SyncReport>(it) }.getOrNull() }
+
+    fun saveSyncReport(report: SyncReport) = prefs.edit { putString(KEY_SYNC_REPORT, json.encodeToString(report)) }
 
     fun setups(): Map<String, PlatformSetup> {
         prefs.getString(KEY_SETUPS, null)?.let { stored ->
@@ -81,5 +88,6 @@ class DeviceStore(context: Context) {
         const val KEY_TOKEN = "device_token"
         const val KEY_SETUPS = "platform_setups"
         const val KEY_LEGACY_MAPPINGS = "mappings"
+        const val KEY_SYNC_REPORT = "last_sync_report"
     }
 }

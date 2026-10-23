@@ -140,6 +140,8 @@ data class SyncAction(
         const val CONFLICT = "conflict"
         const val PENDING_CONFLICT = "pending-conflict"
         const val UNRECOGNIZED = "unrecognized"
+        const val EMPTY = "empty"
+        const val DELETED = "deleted"
     }
 }
 
@@ -148,10 +150,10 @@ data class PlanResponse(val actions: List<SyncAction>)
 
 @Serializable
 data class UploadResponse(
-    /** `ok` or `conflict`. */
+    /** `ok`, `conflict`, `empty` (kept in history only) or `deleted` (deleted in the GUI; nothing stored). */
     val status: String,
-    val saveId: Long,
-    val versionId: Long,
+    val saveId: Long? = null,
+    val versionId: Long? = null,
     val conflictId: Long? = null,
 )
 

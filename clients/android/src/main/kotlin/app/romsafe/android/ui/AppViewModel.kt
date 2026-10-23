@@ -12,8 +12,10 @@ import app.romsafe.android.data.Folders
 import app.romsafe.android.data.Lan
 import app.romsafe.android.data.Pairing
 import app.romsafe.android.data.PlatformSetup
+import app.romsafe.android.sync.SyncRunner
+import app.romsafe.android.sync.SyncWorker
+import app.romsafe.android.sync.mappingsFor
 import app.romsafe.shared.api.DeviceConfig
-import app.romsafe.shared.api.Mapping
 import app.romsafe.shared.api.PlatformInfo
 import app.romsafe.shared.api.RomSafeApi
 import app.romsafe.shared.api.RomSafeApiException
@@ -106,6 +108,7 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
                 val result = RomSafeApi(base, null).use { it.pair(code.trim().uppercase(), name, "android") }
                 val pairing = Pairing(base, result.deviceId, name, result.token)
                 store.savePairing(pairing)
+                SyncWorker.schedule(app)
                 _state.update { AppState(pairing = pairing, lastServerUrl = base, setups = store.setups()) }
                 refresh()
             } catch (e: CancellationException) {
@@ -120,6 +123,8 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
         val ctx = app.applicationContext
         _state.value.setups.values.flatMap { it.uris() }.forEach { Folders.release(ctx, Uri.parse(it)) }
         store.clearPairing()
+        SyncWorker.cancel(app)
+        SyncRunner.init(app)
         api?.close()
         api = null
         _state.value = AppState(lastServerUrl = store.lastServerUrl)
@@ -144,6 +149,9 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
                     it.copy(config = config, loading = false, setups = setups, granted = granted, folderLabels = labels)
                 }
                 checkLayouts()
+                // Sync when the app opens, unless it just did.
+                val last = SyncRunner.status.value.last?.finishedAt ?: 0
+                if (System.currentTimeMillis() - last > 60_000) syncNow()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RomSafeApiException) {
@@ -284,14 +292,7 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
             delay(400)
             val s = _state.value
             val config = s.config ?: return@launch
-            val body = config.platforms.flatMap { p ->
-                val setup = s.setups[p.slug] ?: return@flatMap emptyList()
-                setup.emulators.mapNotNull { e ->
-                    val save = e.saveUri ?: return@mapNotNull null
-                    if (e.profile !in p.profiles) return@mapNotNull null
-                    Mapping(platform = p.slug, profile = e.profile, slot = e.slot, saveRoot = save, romRoot = setup.romUri)
-                }
-            }
+            val body = mappingsFor(config, s.setups)
             _state.update { it.copy(saveStatus = SaveStatus.Saving) }
             try {
                 api().putMappings(body)
@@ -305,6 +306,10 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
     }
 
     fun retrySave() = pushMappings()
+
+    fun syncNow() {
+        viewModelScope.launch { SyncRunner.run(app) }
+    }
 
     override fun onCleared() {
         api?.close()

@@ -81,6 +81,8 @@ private data class PickTarget(val slug: String, val kind: FolderKind, val slot: 
 @Composable
 fun PlatformsScreen(
     state: AppState,
+    sync: app.romsafe.android.sync.SyncStatus,
+    onSyncNow: () -> Unit,
     onRefresh: () -> Unit,
     onUnpair: () -> Unit,
     onProfile: (PlatformInfo, slot: String, profile: String) -> Unit,
@@ -173,6 +175,9 @@ fun PlatformsScreen(
                     ) {
                         item {
                             Header(state, config.platforms)
+                        }
+                        item {
+                            SyncCard(sync, anythingSetUp = config.platforms.any(state::isSetUp), onSyncNow = onSyncNow)
                         }
                         if (config.platforms.isEmpty()) {
                             item {

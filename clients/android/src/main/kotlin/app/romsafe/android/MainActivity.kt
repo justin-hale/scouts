@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.romsafe.android.sync.SyncRunner
 import app.romsafe.android.ui.AppViewModel
 import app.romsafe.android.ui.PairScreen
 import app.romsafe.android.ui.PlatformsScreen
@@ -29,12 +30,15 @@ class MainActivity : ComponentActivity() {
             RomSafeTheme {
                 val vm: AppViewModel = viewModel(factory = AppViewModel.Factory)
                 val state by vm.state.collectAsStateWithLifecycle()
+                val sync by SyncRunner.status.collectAsStateWithLifecycle()
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (state.pairing == null) {
                         PairScreen(state, onPair = vm::pair)
                     } else {
                         PlatformsScreen(
                             state = state,
+                            sync = sync,
+                            onSyncNow = vm::syncNow,
                             onRefresh = vm::refresh,
                             onUnpair = vm::unpair,
                             onProfile = vm::selectProfile,

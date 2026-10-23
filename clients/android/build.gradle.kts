@@ -4,6 +4,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val commitCount = providers.exec {
+    commandLine("git", "rev-list", "--count", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim().toIntOrNull() ?: 1 }
+
 android {
     namespace = "app.romsafe.android"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -12,8 +17,10 @@ android {
         applicationId = "app.romsafe"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.compileSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // A new version code for every commit, so launchers and package
+        // managers notice updates (Cocoon, for one, caches icons per version).
+        versionCode = commitCount.get()
+        versionName = "0.3.${commitCount.get()}"
     }
 
     buildFeatures {

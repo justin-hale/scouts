@@ -26,6 +26,13 @@ export async function hashRom(file: string): Promise<FileHashes> {
   };
 }
 
+/** CRC32 of a file, streamed (for track files, which are never matched by hash). */
+export async function crc32File(file: string): Promise<string> {
+  let crc = 0;
+  for await (const chunk of fs.createReadStream(file, { highWaterMark: 1 << 20 })) crc = zlib.crc32(chunk as Buffer, crc);
+  return crc.toString(16).padStart(8, '0');
+}
+
 export function sha256Buffer(buf: Buffer): string {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }

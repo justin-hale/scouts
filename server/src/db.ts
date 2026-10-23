@@ -226,6 +226,14 @@ const migrations: string[] = [
     PRIMARY KEY (platform, rel_path)
   );
   `,
+  `
+  -- Files a ROM needs alongside it: the tracks of a .cue/.gdi, the discs an
+  -- .m3u lists, a CloneCD image's .ccd/.sub. JSON array of
+  -- { path, size, mtime, crc32 }; the CRCs let downloads stream the set as a
+  -- zip with exact headers. total_size includes the ROM itself.
+  ALTER TABLE roms ADD COLUMN parts TEXT;
+  ALTER TABLE roms ADD COLUMN total_size INTEGER;
+  `,
 ];
 
 function migrate(db: Db): void {

@@ -9,9 +9,11 @@ import { PLATFORMS } from '../platforms.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
 import { LibraryRemover } from '../library/remove.js';
-import { zipStream } from '../library/zip.js';
+import type { RomPart } from '../library/scanner.js';
+import { zipFilesStream, zipStream } from '../library/zip.js';
 import { downloadName } from '../saves/content.js';
 import { saveLabel } from '../saves/labels.js';
+import type { SaveRow } from '../saves/store.js';
 import { PUBLIC_SETTINGS, publicSettings, setSetting } from '../settings.js';
 
 type IdParams = { Params: { id: string } };
@@ -38,6 +40,8 @@ export const adminRoutes =
       ...s,
       downloadName: downloadName(s.platform, s.gameKey, s.file),
       empty: s.sha256 ? sync.store.isEmptyVersion(s.platform, s.sha256) : false,
+      // The copy in the platform's save folder (null when no save folder is set).
+      serverPath: sync.store.serverPath({ platform: s.platform, game_key: s.gameKey, file: s.file } as SaveRow),
     });
 
     // Endpoints shared with devices: ROM and save version downloads.
@@ -45,12 +49,35 @@ export const adminRoutes =
       shared.addHook('preHandler', requireAdminOrDevice);
 
       shared.get<IdParams>('/roms/:id/download', async (req, reply) => {
-        const rom = db.get<{ platform: string; rel_path: string; file_name: string }>(
-          'SELECT platform, rel_path, file_name FROM roms WHERE id = $id AND missing = 0',
+        const rom = db.get<{
+          platform: string;
+          rel_path: string;
+          file_name: string;
+          stem: string;
+          size: number;
+          mtime: number;
+          crc32: string | null;
+          parts: string | null;
+        }>(
+          'SELECT platform, rel_path, file_name, stem, size, mtime, crc32, parts FROM roms WHERE id = $id AND missing = 0',
           { $id: int(req.params.id) },
         );
         const root = rom && ctx.platform(rom.platform)?.romPath;
         if (!rom || !root) return notFound(reply, 'ROM not found');
+        if (rom.parts) {
+          // A .cue and its tracks (or an .m3u and its discs) only work together: send the set as one zip,
+          // with paths relative to the ROM's folder.
+          const dir = path.posix.dirname(rom.rel_path);
+          const inZip = (rel: string) => (dir === '.' ? rel : path.posix.relative(dir, rel));
+          const parts = JSON.parse(rom.parts) as RomPart[];
+          const files = [
+            { name: rom.file_name, path: path.join(root, rom.rel_path), size: rom.size, mtime: rom.mtime, crc32: rom.crc32 ?? undefined },
+            ...parts.map((p) => ({ name: inZip(p.path), path: path.join(root, p.path), size: p.size, mtime: p.mtime, crc32: p.crc32 })),
+          ];
+          reply.header('Content-Type', 'application/zip');
+          reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`${rom.stem}.zip`)}`);
+          return reply.send(zipFilesStream(files));
+        }
         reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(rom.file_name)}`);
         return reply.sendFile(rom.rel_path, root, { dotfiles: 'allow', cacheControl: false });
       });
@@ -193,11 +220,22 @@ export const adminRoutes =
           { $id: id },
         );
         if (!game) return notFound(reply);
-        const roms = db.all(
-          `SELECT id, rel_path AS relPath, file_name AS fileName, size, crc32, md5, sha1, title_id AS titleId, missing
-           FROM roms WHERE game_id = $id ORDER BY file_name`,
-          { $id: id },
-        );
+        // Where files live, as the server sees them (container paths), for the GUI to show on hover.
+        const romRoot = ctx.platform((game as { platform: string }).platform)?.romPath;
+        const onServer = (rel: string) => (romRoot ? path.join(romRoot, rel) : null);
+        const roms = db
+          .all<{ relPath: string; size: number; totalSize: number | null; parts: string | null }>(
+            `SELECT id, rel_path AS relPath, file_name AS fileName, size, total_size AS totalSize, parts,
+               crc32, md5, sha1, title_id AS titleId, missing
+             FROM roms WHERE game_id = $id ORDER BY file_name`,
+            { $id: id },
+          )
+          .map((r) => ({
+            ...r,
+            totalSize: r.totalSize ?? r.size,
+            parts: ((r.parts ? JSON.parse(r.parts) : []) as RomPart[]).map((p) => ({ path: p.path, size: p.size, serverPath: onServer(p.path) })),
+            serverPath: onServer(r.relPath),
+          }));
         const saves = db
           .all<{ platform: string; gameKey: string; file: string; sha256: string | null }>(
             `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
@@ -210,11 +248,13 @@ export const adminRoutes =
             { $id: id },
           )
           .map(describeSave);
-        const extras = db.all(
-          `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
-           FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
-          { $id: id },
-        );
+        const extras = db
+          .all<{ relPath: string }>(
+            `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
+             FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
+            { $id: id },
+          )
+          .map((x) => ({ ...x, serverPath: onServer(x.relPath) }));
         return { ...game, roms, saves, extras };
       });
 

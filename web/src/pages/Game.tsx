@@ -6,7 +6,7 @@ import { ExportSaves } from '../components/ExportSaves';
 import { faArrowLeft, faCloudArrowUp, faDownload, faImage, faPuzzlePiece, faTrashCan, Icon } from '../components/icons';
 import { SaveCard } from '../components/SaveCard';
 import { SaveUpload } from '../components/uploads';
-import { Badge, Button, Card, ConfirmDialog, ErrorNote, formatBytes, Input, Modal, useApi } from '../components/ui';
+import { Badge, Button, Card, ConfirmDialog, ErrorNote, formatBytes, Input, Modal, ServerPath, useApi } from '../components/ui';
 
 export default function Game() {
   const id = Number(useParams().id);
@@ -119,11 +119,13 @@ export default function Game() {
           </thead>
           <tbody>
             {g.roms.map((r) => (
-              <tr key={r.id} className="border-t border-stone-800">
+              <tr key={r.id} className="border-t border-stone-800 align-top">
                 <td className="px-4 py-2">
-                  {r.relPath} {r.missing ? <Badge tone="red">missing</Badge> : null}
+                  <span title={r.serverPath ?? undefined}>{r.relPath}</span> {r.missing ? <Badge tone="red">missing</Badge> : null}
+                  <ServerPath path={r.serverPath} />
+                  <RomParts parts={r.parts} />
                 </td>
-                <td className="px-4 py-2 whitespace-nowrap">{formatBytes(r.size)}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{formatBytes(r.totalSize)}</td>
                 <td className="px-4 py-2 font-mono text-xs">{r.crc32}</td>
                 <td className="px-4 py-2 font-mono text-xs break-all">{r.sha1}</td>
                 <td className="px-4 py-2">
@@ -155,7 +157,8 @@ export default function Game() {
                       <Badge tone="brand">{x.kind}</Badge>
                     </td>
                     <td className="px-4 py-2 break-all">
-                      {x.relPath} {x.missing ? <Badge tone="red">missing</Badge> : null}
+                      <span title={x.serverPath ?? undefined}>{x.relPath}</span> {x.missing ? <Badge tone="red">missing</Badge> : null}
+                      <ServerPath path={x.serverPath} />
                     </td>
                     <td className="px-4 py-2 whitespace-nowrap">{formatBytes(x.size)}</td>
                     <td className="px-4 py-2">{!x.missing && <DownloadLink href={`/api/extras/${x.id}/download`} />}</td>
@@ -217,6 +220,35 @@ export default function Game() {
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+/** Files that travel with a ROM (tracks, discs, .ccd/.sub). Long lists start collapsed. */
+function RomParts({ parts }: { parts: GameDetail['roms'][number]['parts'] }) {
+  if (!parts.length) return null;
+  const list = (
+    <ul className="mt-1 space-y-0.5 border-l border-stone-800 pl-3 text-xs text-stone-400">
+      {parts.map((p) => (
+        <li key={p.path} title={p.serverPath ?? undefined} className="flex justify-between gap-4">
+          <span className="break-all">{p.path.split('/').pop()}</span>
+          <span className="shrink-0 text-stone-600">{formatBytes(p.size)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+  const label = `${parts.length} file${parts.length === 1 ? '' : 's'} included; downloads as one zip`;
+  if (parts.length <= 3)
+    return (
+      <div className="mt-1">
+        <div className="text-xs text-stone-500">{label}</div>
+        {list}
+      </div>
+    );
+  return (
+    <details className="mt-1">
+      <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-300">{label}</summary>
+      {list}
+    </details>
   );
 }
 

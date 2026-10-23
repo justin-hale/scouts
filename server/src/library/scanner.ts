@@ -4,11 +4,11 @@ import type { AppContext, PlatformConfig } from '../context.js';
 import { now, type Db } from '../db.js';
 import { getPlatform } from '../platforms.js';
 import { SaveStore, walkFiles } from '../saves/store.js';
-import { hashRom } from './hash.js';
+import { crc32File, hashRom } from './hash.js';
 import { parseDiscImage, readDiscId, wiiTitleId } from './disc.js';
 import { parse3dsTitleId, read3dsTitleId } from './n3ds.js';
 import { cleanTitle, fileStem } from './names.js';
-import { sheetTracks } from './sheets.js';
+import { companionPaths, sheetTracks } from './sheets.js';
 import { readZipEntryHead } from './zip.js';
 
 export interface ScanStatus {
@@ -103,12 +103,15 @@ export class Scanner {
 
     const store = new SaveStore(this.ctx);
     if (pc.romPath && fs.existsSync(pc.romPath)) {
-      const { roms, extras, other } = classifyFiles(pc.def.romExtensions, pc.romPath, [...walkFiles(pc.romPath)]);
+      const all = [...walkFiles(pc.romPath)];
+      const onDisk = new Map(all.map((f) => [f.toLowerCase(), f]));
+      const { roms, extras, other } = classifyFiles(pc.def.romExtensions, pc.romPath, all);
       this.status.total += roms.length;
 
       for (const rel of roms) {
         try {
           await this.scanRom(pc, rel);
+          await this.indexParts(pc, rel, onDisk);
         } catch (err) {
           this.status.errors.push(`${slug}/${rel}: ${(err as Error).message}`);
         }
@@ -123,6 +126,34 @@ export class Scanner {
     }
 
     this.status.savesImported += store.importFromDisk(pc).imported;
+  }
+
+  /**
+   * Record the files a ROM needs alongside it (library/sheets.ts) with their
+   * CRCs, so the set downloads as one zip. CRCs are only recomputed for files
+   * whose size or mtime changed.
+   */
+  private async indexParts(pc: PlatformConfig, rel: string, onDisk: Map<string, string>): Promise<void> {
+    const db = this.ctx.db;
+    const row = db.get<{ id: number; size: number; parts: string | null }>('SELECT id, size, parts FROM roms WHERE platform = $p AND rel_path = $r', {
+      $p: pc.def.slug,
+      $r: rel,
+    });
+    if (!row) return;
+    const known = new Map((row.parts ? (JSON.parse(row.parts) as RomPart[]) : []).map((p) => [p.path, p]));
+    const parts: RomPart[] = [];
+    for (const p of companionPaths(pc.romPath!, rel, onDisk)) {
+      const st = fs.statSync(path.join(pc.romPath!, p));
+      const mtime = Math.floor(st.mtimeMs);
+      const prev = known.get(p);
+      const crc32 = prev && prev.size === st.size && prev.mtime === mtime ? prev.crc32 : await crc32File(path.join(pc.romPath!, p));
+      parts.push({ path: p, size: st.size, mtime, crc32 });
+    }
+    db.run('UPDATE roms SET parts = $parts, total_size = $total WHERE id = $id', {
+      $parts: parts.length ? JSON.stringify(parts) : null,
+      $total: row.size + parts.reduce((n, p) => n + p.size, 0),
+      $id: row.id,
+    });
   }
 
   /** Record an extra and attach it to the game whose ROMs share its folder. */
@@ -257,6 +288,13 @@ const EXTRA_DIRS: Record<string, string> = {
   bios: 'firmware',
   firmware: 'firmware',
 };
+
+export interface RomPart {
+  path: string;
+  size: number;
+  mtime: number;
+  crc32: string;
+}
 
 interface ExtraFile {
   rel: string;

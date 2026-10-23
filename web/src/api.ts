@@ -105,9 +105,15 @@ export interface GameDetail {
     sha1: string | null;
     titleId: string | null;
     missing: number;
+    /** Size including the parts below. */
+    totalSize: number;
+    /** Files that go with this ROM: a .cue's tracks, an .m3u's discs, a CloneCD .img's .ccd/.sub. */
+    parts: { path: string; size: number; serverPath: string | null }[];
+    /** Where the file is on the server (the container's view). */
+    serverPath: string | null;
   }[];
   saves: SaveSummary[];
-  extras: { id: number; kind: string; relPath: string; fileName: string; size: number; missing: number }[];
+  extras: { id: number; kind: string; relPath: string; fileName: string; size: number; missing: number; serverPath: string | null }[];
 }
 
 export interface SaveSummary {
@@ -124,6 +130,8 @@ export interface SaveSummary {
   downloadName: string;
   /** The current version holds no game data (never written, or an empty memory card). */
   empty: boolean;
+  /** The save's copy in the platform's save folder on the server, if one is set. */
+  serverPath: string | null;
 }
 
 export interface SaveListItem extends SaveSummary {

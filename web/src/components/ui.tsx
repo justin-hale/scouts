@@ -146,6 +146,12 @@ export function ConfirmDialog({
   );
 }
 
+/** Where a file lives on the server. Only on wider screens; pair it with a tooltip on the name for small ones. */
+export function ServerPath({ path }: { path: string | null | undefined }) {
+  if (!path) return null;
+  return <div className="hidden truncate font-mono text-[11px] text-stone-600 md:block">{path}</div>;
+}
+
 export function Progress({ value, total }: { value: number; total: number }) {
   const pct = total ? Math.round((value / total) * 100) : 0;
   return (

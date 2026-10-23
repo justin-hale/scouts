@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { del, get, post, type SaveSummary, type SaveVersion } from '../api';
 import { faClockRotateLeft, faDownload, faTrashCan, Icon } from './icons';
-import { Badge, Button, Card, ConfirmDialog, formatBytes, formatTime, useApi } from './ui';
+import { Badge, Button, Card, ConfirmDialog, formatBytes, formatTime, ServerPath, useApi } from './ui';
 
 export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?: ReactNode; onChange: () => void }) {
   const [open, setOpen] = useState(false);
@@ -19,7 +19,7 @@ export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?:
         <div>
           {label && <div className="mb-0.5 text-sm font-medium text-stone-100">{label}</div>}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm text-stone-300" title={`Stored on the server as ${save.file}`}>
+            <span className="font-mono text-sm text-stone-300" title={save.serverPath ?? `Stored on the server as ${save.file}`}>
               {save.downloadName}
             </span>
             {save.empty && (
@@ -32,6 +32,7 @@ export function SaveCard({ save, label, onChange }: { save: SaveSummary; label?:
             {formatBytes(save.size)} · updated {formatTime(save.updatedAt)} {save.updatedBy && `by ${save.updatedBy}`} · {save.versionCount}{' '}
             version{save.versionCount === 1 ? '' : 's'}
           </div>
+          <ServerPath path={save.serverPath} />
         </div>
         <div className="flex gap-2">
           {save.currentVersionId && (

@@ -1,7 +1,9 @@
+import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import zlib from 'node:zlib';
+import { crc32File } from './hash.js';
 
 const EOCD = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 const ZIP64_LOCATOR = 0x07064b50;
@@ -122,6 +124,7 @@ export function unzipBuffer(zip: Buffer, maxTotal = 256 * 1024 * 1024): { name: 
     const nameLen = zip.readUInt16LE(p + 28);
     const extraLen = zip.readUInt16LE(p + 30);
     const commentLen = zip.readUInt16LE(p + 32);
+    const crc = zip.readUInt32LE(p + 16);
     const e: Entry = {
       name: zip.toString('utf8', p + 46, p + 46 + nameLen),
       method: zip.readUInt16LE(p + 10),
@@ -141,6 +144,7 @@ export function unzipBuffer(zip: Buffer, maxTotal = 256 * 1024 * 1024): { name: 
     else throw new Error(`"${e.name}" uses an unsupported compression method`);
     total += data.length;
     if (total > maxTotal) throw new Error('Zip is too large');
+    if (zlib.crc32(data) !== crc) throw new Error(`"${e.name}" is corrupt (CRC mismatch)`);
     out.push({ name: e.name.replace(/\\/g, '/'), data });
   }
   return out;
@@ -208,6 +212,71 @@ export function zipStream(entries: Iterable<ZipInput>): Readable {
       yield Buffer.concat([cdBuf, end]);
     })(),
     { objectMode: false },
+  );
+}
+
+export interface ZipFile {
+  /** Name inside the zip. */
+  name: string;
+  /** File on disk. */
+  path: string;
+  /** Size, mtime and CRC recorded at scan time; the CRC is recomputed if the file has changed since. */
+  size?: number;
+  mtime?: number;
+  crc32?: string;
+}
+
+/**
+ * Stream files from disk as a zip without loading them: entries are stored
+ * (disc tracks barely compress) with their exact CRC and sizes in the local
+ * headers, so every unzipper can read it, including Java's ZipInputStream,
+ * which can't handle stored entries with trailing data descriptors.
+ */
+export function zipFilesStream(files: ZipFile[]): Readable {
+  return Readable.from(
+    (async function* () {
+      const central: Buffer[] = [];
+      let offset = 0;
+      for (const f of files) {
+        const st = await fs.stat(f.path);
+        const unchanged = f.crc32 && f.size === st.size && f.mtime === Math.floor(st.mtimeMs);
+        const crc = parseInt(unchanged ? f.crc32! : await crc32File(f.path), 16);
+        if (offset + st.size + 30 + Buffer.byteLength(f.name) > SAT32) {
+          throw Object.assign(new Error('This ROM set is larger than 4 GB; download its files one by one'), { statusCode: 413 });
+        }
+        const name = Buffer.from(f.name, 'utf8');
+        const { time, date } = dosTime(st.mtime);
+        const header = (central: boolean) => {
+          const h = Buffer.alloc(central ? 46 : 30);
+          let p = 0;
+          h.writeUInt32LE(central ? CENTRAL : LOCAL, p);
+          if (central) h.writeUInt16LE(20, (p += 4));
+          h.writeUInt16LE(20, (p += central ? 2 : 4)); // version needed
+          h.writeUInt16LE(0x0800, (p += 2)); // UTF-8 names
+          h.writeUInt16LE(0, (p += 2)); // stored
+          h.writeUInt16LE(time, (p += 2));
+          h.writeUInt16LE(date, (p += 2));
+          h.writeUInt32LE(crc >>> 0, (p += 2));
+          h.writeUInt32LE(st.size, (p += 4));
+          h.writeUInt32LE(st.size, (p += 4));
+          h.writeUInt16LE(name.length, (p += 4));
+          if (central) h.writeUInt32LE(offset, 42);
+          return h;
+        };
+        central.push(header(true), name);
+        yield Buffer.concat([header(false), name]);
+        for await (const chunk of createReadStream(f.path, { highWaterMark: 1 << 20 })) yield chunk as Buffer;
+        offset += 30 + name.length + st.size;
+      }
+      const cd = Buffer.concat(central);
+      const end = Buffer.alloc(22);
+      end.writeUInt32LE(0x06054b50, 0);
+      end.writeUInt16LE(files.length, 8);
+      end.writeUInt16LE(files.length, 10);
+      end.writeUInt32LE(cd.length, 12);
+      end.writeUInt32LE(offset, 16);
+      yield Buffer.concat([cd, end]);
+    })(),
   );
 }
 

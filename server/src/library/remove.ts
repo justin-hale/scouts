@@ -12,6 +12,7 @@ interface RomRow {
   platform: string;
   game_id: number | null;
   rel_path: string;
+  parts: string | null;
 }
 
 /**
@@ -28,7 +29,7 @@ export class LibraryRemover {
   /** Delete one ROM file (and the tracks of a .cue/.gdi). If it was the game's last ROM, the game goes too; its saves stay. */
   deleteRom(romId: number): { gameDeleted: boolean } {
     const db = this.ctx.db;
-    const rom = db.get<RomRow>('SELECT id, platform, game_id, rel_path FROM roms WHERE id = $id', { $id: romId });
+    const rom = db.get<RomRow>('SELECT id, platform, game_id, rel_path, parts FROM roms WHERE id = $id', { $id: romId });
     if (!rom) throw Object.assign(new Error('ROM not found'), { statusCode: 404 });
     const stamp = trashStamp();
     this.trashRomFiles(rom, stamp);
@@ -46,7 +47,7 @@ export class LibraryRemover {
     const db = this.ctx.db;
     if (!db.get('SELECT 1 FROM games WHERE id = $id', { $id: gameId })) throw Object.assign(new Error('Game not found'), { statusCode: 404 });
     const stamp = trashStamp();
-    const roms = db.all<RomRow>('SELECT id, platform, game_id, rel_path FROM roms WHERE game_id = $g', { $g: gameId });
+    const roms = db.all<RomRow>('SELECT id, platform, game_id, rel_path, parts FROM roms WHERE game_id = $g', { $g: gameId });
     for (const rom of roms) {
       this.trashRomFiles(rom, stamp);
       db.run('DELETE FROM roms WHERE id = $id', { $id: rom.id });
@@ -81,7 +82,12 @@ export class LibraryRemover {
   private trashRomFiles(rom: RomRow, stamp: string): void {
     const root = this.ctx.platform(rom.platform)?.romPath;
     if (!root) return;
-    for (const rel of [rom.rel_path, ...sheetTrackPaths(root, rom.rel_path)]) trash(root, rel, stamp);
+    // The discs an .m3u lists are ROMs of their own; every other ROM's parts go with it.
+    let parts: string[] = [];
+    if (path.extname(rom.rel_path).toLowerCase() !== '.m3u') {
+      parts = rom.parts ? (JSON.parse(rom.parts) as { path: string }[]).map((p) => p.path) : sheetTrackPaths(root, rom.rel_path);
+    }
+    for (const rel of [rom.rel_path, ...parts]) trash(root, rel, stamp);
   }
 }
 

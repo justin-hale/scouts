@@ -63,6 +63,11 @@ DELETE /api/device/roms/queue/{id}
 After a download, write the file to `romRoot/relPath` and send an inventory update. That also
 removes it from the queue.
 
+ROMs that need companion files (a `.cue` and its `.bin` tracks, an `.m3u` and its discs, a CloneCD
+`.img` with its `.ccd`/`.sub`) download as one `application/zip` named `<stem>.zip`, without Range
+support. Its entries are stored (uncompressed), with paths relative to the ROM's folder: extract
+them into the folder of `romRoot/relPath`.
+
 ## Saves
 
 Saves sync **before** ROM inventory changes take effect, so send the ROM inventory first. That

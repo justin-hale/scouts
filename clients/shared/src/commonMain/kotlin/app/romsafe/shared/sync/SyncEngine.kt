@@ -105,9 +105,11 @@ class SyncEngine(
         cache.retain(hashScope, files.mapTo(mutableSetOf()) { it.path })
 
         // Leave files alone while the emulator may still be writing them, and
-        // don't download over them either.
+        // don't download over them either. A recent file the cache already
+        // knows at this size and time is one a sync just wrote (platforms can
+        // share a folder), not one the emulator is busy with.
         val cutoff = now() - RECENT_MS
-        val (busy, settled) = files.partition { it.modified > cutoff }
+        val (busy, settled) = files.partition { it.modified > cutoff && cache.get(hashScope, it) == null }
         val busyPaths = busy.mapTo(mutableSetOf()) { it.path.lowercase() }
         r = r.copy(busy = r.busy + busy.size)
 

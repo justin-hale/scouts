@@ -126,4 +126,24 @@ class SyncEngineTest {
         runCatching { SyncEngine(api, cache, now = { 10_000L }).syncPlatform(PlatformJob(n3ds, null, null, listOf(EmulatorFolder("2", azahar, tree, "citra")))) }
         assertFalse("$saveDir/00000001/main" in tree.reads)
     }
+
+    @Test
+    fun filesASyncJustWroteAreNotBusy() = runTest {
+        val tree = MemoryTree(mutableMapOf("Game.srm" to (byteArrayOf(5) to 9_000L)))
+        val reported = mutableListOf<String>()
+        val engine = MockEngine { req ->
+            reported += Json.parseToJsonElement(req.body.toByteArray().decodeToString()).jsonObject["files"]!!.jsonArray
+                .map { it.jsonObject["path"]!!.jsonPrimitive.content }
+            respond("""{"actions":[]}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        var stored: String? = null
+        val cache = HashCache({ stored }, { stored = it })
+        // Another platform sharing the folder just downloaded Game.srm (same scope, so it's in the cache).
+        cache.put("sha256:shared", FileEntry("Game.srm", 1, 9_000L, false), sha256Hex(byteArrayOf(5)))
+        val retroarch = Profile("retroarch", "RetroArch", saves = listOf(SaveRule(listOf("*"), "{game}.srm")))
+        val result = SyncEngine(RomSafeApi("http://nas", "t", engine), cache, now = { 10_000L })
+            .syncPlatform(PlatformJob(PlatformInfo("gba", "GBA", "rom"), null, null, listOf(EmulatorFolder("", retroarch, tree, "shared"))))
+        assertEquals(0, result.busy)
+        assertEquals(listOf("Game.srm"), reported)
+    }
 }

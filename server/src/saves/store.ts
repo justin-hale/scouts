@@ -224,9 +224,9 @@ export class SaveStore {
    *   Azahar and RomM export them.
    * - PSP: a zip of one or more SAVEDATA folders.
    * - GameCube: a .gci file, placed on memory card A of its region.
-   * Returns the saves that changed.
+   * Returns the saves that changed. `note` labels the new versions in history.
    */
-  importUpload(gameId: number, uploadName: string, data: Buffer): SaveKey[] {
+  importUpload(gameId: number, uploadName: string, data: Buffer, note = `Uploaded (${uploadName})`): SaveKey[] {
     const db = this.ctx.db;
     const game = db.get<{ platform: string; title_id: string | null }>('SELECT platform, title_id FROM games WHERE id = $id', { $id: gameId });
     if (!game) throw new UploadError('Game not found', 404);
@@ -278,7 +278,7 @@ export class SaveStore {
     const changed: SaveKey[] = [];
     for (const { key, data } of keys) {
       key.gameKey = normalizeGameKey(def, key.gameKey);
-      if (this.importData(def.slug, key, data, `Uploaded (${uploadName})`)) changed.push(key);
+      if (this.importData(def.slug, key, data, note)) changed.push(key);
     }
     return changed;
   }

@@ -51,6 +51,14 @@ object Downloads {
 
     fun clearError(romId: Long) = _items.update { m -> if (m[romId]?.error != null) m - romId else m }
 
+    /** Marks the queued ROMs the library knows about as failed, so they don't sit at "Waiting" forever. */
+    internal fun failAll(message: String) {
+        pendingIds.forEach { id -> update(Item(id, _items.value[id]?.name ?: "", error = message)) }
+    }
+
+    /** ROMs queued from this app since it started; failAll reports on these. */
+    internal val pendingIds = mutableSetOf<Long>()
+
     /** Works through the server's download queue; a later call runs after the current one. */
     fun start(context: Context) {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -79,8 +87,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         RomSafeApi(pairing.serverUrl, pairing.token).use { api ->
             val config = try {
                 api.config()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: IOException) {
                 return Result.retry()
+            } catch (e: Exception) {
+                Downloads.failAll(e.message ?: e.javaClass.simpleName)
+                return Result.failure()
             }
             val setups = app.store.setups()
             val granted = Folders.grantedUris(app)
@@ -92,8 +105,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             while (!isStopped) {
                 val rom = try {
                     api.queue().firstOrNull { it.id !in skipped }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: IOException) {
                     return Result.retry()
+                } catch (e: Exception) {
+                    Downloads.failAll("Couldn't read the download queue: ${e.message ?: e.javaClass.simpleName}")
+                    return Result.failure()
                 } ?: break
                 val platform = platforms[rom.platform]
                 val romUri = setups[rom.platform]?.romUri?.takeIf { it in granted }

@@ -56,6 +56,7 @@ test('device ROMs are matched by hash and missing ROMs can be queued', async () 
   await pc.call('POST', '/api/device/roms/queue', { romIds: [roms.body[0].id] });
   const queue = await pc.call('GET', '/api/device/roms/queue');
   assert.equal(queue.body.length, 1);
+  assert.equal(queue.body[0].multiFile, false);
   const dl = await srv.app.inject({ method: 'GET', url: queue.body[0].url, headers: { ...pc.headers, range: 'bytes=0-3' } });
   assert.equal(dl.statusCode, 206);
   assert.equal(dl.body, 'fake');

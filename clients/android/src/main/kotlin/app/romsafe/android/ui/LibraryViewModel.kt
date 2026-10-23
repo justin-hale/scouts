@@ -77,6 +77,7 @@ class LibraryViewModel(private val app: RomSafeApp) : ViewModel() {
         viewModelScope.launch {
             try {
                 api()?.enqueue(listOf(rom.id))
+                Downloads.pendingIds += rom.id
                 Downloads.clearError(rom.id)
                 Downloads.start(app)
             } catch (e: CancellationException) {

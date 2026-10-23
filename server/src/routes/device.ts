@@ -164,14 +164,17 @@ export const deviceRoutes =
       });
 
       dev.get('/roms/queue', async (req) =>
-        db.all(
-          `SELECT r.id, r.platform, r.rel_path AS relPath, r.file_name AS fileName, r.size, r.sha1,
-             r.total_size AS totalSize, r.parts IS NOT NULL AS multiFile,
-             '/api/roms/' || r.id || '/download' AS url
-           FROM device_rom_queue q JOIN roms r ON r.id = q.rom_id
-           WHERE q.device_id = $d AND r.missing = 0 ORDER BY q.requested_at`,
-          { $d: req.device!.id },
-        ),
+        db
+          .all<{ multiFile: number }>(
+            `SELECT r.id, r.platform, r.rel_path AS relPath, r.file_name AS fileName, r.size, r.sha1,
+               r.total_size AS totalSize, r.parts IS NOT NULL AS multiFile,
+               '/api/roms/' || r.id || '/download' AS url
+             FROM device_rom_queue q JOIN roms r ON r.id = q.rom_id
+             WHERE q.device_id = $d AND r.missing = 0 ORDER BY q.requested_at`,
+            { $d: req.device!.id },
+          )
+          // SQLite has no booleans; clients expect JSON true/false.
+          .map((r) => ({ ...r, multiFile: !!r.multiFile })),
       );
 
       dev.post<{ Body: { romIds: number[] } }>('/roms/queue', async (req) => {

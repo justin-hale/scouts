@@ -44,9 +44,16 @@ export const adminRoutes =
       serverPath: sync.store.serverPath({ platform: s.platform, game_key: s.gameKey, file: s.file } as SaveRow),
     });
 
-    // Endpoints shared with devices: ROM and save version downloads.
+    // Endpoints shared with devices: ROM and save version downloads, and cover art.
     app.register(async (shared) => {
       shared.addHook('preHandler', requireAdminOrDevice);
+
+      // Covers are fetched once by the server (with its IGDB / SteamGridDB keys) and cached;
+      // devices show the cached copies instead of needing keys of their own.
+      shared.get<{ Params: { file: string } }>('/covers/:file', async (req, reply) => {
+        if (!/^[\w-]+\.(jpg|png|webp)$/.test(req.params.file)) return notFound(reply);
+        return reply.sendFile(req.params.file, ctx.coverDir, { maxAge: '30d', immutable: true });
+      });
 
       shared.get<IdParams>('/roms/:id/download', async (req, reply) => {
         const rom = db.get<{
@@ -300,10 +307,6 @@ export const adminRoutes =
         return { ok: true };
       });
 
-      admin.get<{ Params: { file: string } }>('/covers/:file', async (req, reply) => {
-        if (!/^[\w-]+\.(jpg|png|webp)$/.test(req.params.file)) return notFound(reply);
-        return reply.sendFile(req.params.file, ctx.coverDir, { maxAge: '30d', immutable: true });
-      });
 
       // --- saves & conflicts ---------------------------------------------------
 

@@ -112,9 +112,61 @@ export const deviceRoutes =
         ),
       );
 
+      /**
+       * The server library for one platform, a game per entry with its ROMs, for
+       * browsing and downloading on the device. `cover` is a file under /api/covers/.
+       */
+      dev.get<{ Querystring: { platform: string } }>('/games', async (req) => {
+        const deviceId = req.device!.id;
+        const platform = req.query.platform;
+        const games = db.all<{ id: number; title: string; releaseDate: string | null; cover: string | null }>(
+          `SELECT g.id, g.title, g.release_date AS releaseDate, g.cover_file AS cover
+           FROM games g WHERE g.platform = $p
+             AND EXISTS (SELECT 1 FROM roms r WHERE r.game_id = g.id AND r.missing = 0)
+           ORDER BY g.title COLLATE NOCASE`,
+          { $p: platform },
+        );
+        const roms = db.all<{
+          id: number;
+          gameId: number;
+          fileName: string;
+          relPath: string;
+          size: number;
+          totalSize: number | null;
+          parts: string | null;
+          localPath: string | null;
+          queued: number;
+        }>(
+          `SELECT r.id, r.game_id AS gameId, r.file_name AS fileName, r.rel_path AS relPath, r.size,
+             r.total_size AS totalSize, r.parts,
+             (SELECT dr.local_path FROM device_roms dr WHERE dr.device_id = $d AND dr.rom_id = r.id LIMIT 1) AS localPath,
+             EXISTS (SELECT 1 FROM device_rom_queue q WHERE q.device_id = $d AND q.rom_id = r.id) AS queued
+           FROM roms r WHERE r.platform = $p AND r.missing = 0 AND r.game_id IS NOT NULL
+           ORDER BY r.file_name COLLATE NOCASE`,
+          { $d: deviceId, $p: platform },
+        );
+        const byGame = new Map<number, unknown[]>();
+        for (const r of roms) {
+          const list = byGame.get(r.gameId) ?? [];
+          list.push({
+            id: r.id,
+            fileName: r.fileName,
+            relPath: r.relPath,
+            // What the download weighs: multi-file ROMs come as one zip of all their files.
+            size: r.totalSize ?? r.size,
+            multiFile: r.parts != null,
+            localPath: r.localPath,
+            queued: !!r.queued,
+          });
+          byGame.set(r.gameId, list);
+        }
+        return games.map((g) => ({ ...g, roms: byGame.get(g.id) ?? [] }));
+      });
+
       dev.get('/roms/queue', async (req) =>
         db.all(
           `SELECT r.id, r.platform, r.rel_path AS relPath, r.file_name AS fileName, r.size, r.sha1,
+             r.total_size AS totalSize, r.parts IS NOT NULL AS multiFile,
              '/api/roms/' || r.id || '/download' AS url
            FROM device_rom_queue q JOIN roms r ON r.id = q.rom_id
            WHERE q.device_id = $d AND r.missing = 0 ORDER BY q.requested_at`,

@@ -395,3 +395,24 @@ test('a conflict shows which emulator folder its copy came from and when each fi
   assert.equal(c.deviceFileMtime, september);
   assert.equal(c.deviceFolder, 'content://x/tree/primary%3ARoms%2F3ds%2Fsdmc');
 });
+
+test('devices browse the library by game and get covers from the server cache', async () => {
+  const handheld = await srv.pairDevice('Library Browser');
+  const games = await handheld.call('GET', '/api/device/games?platform=gba');
+  assert.equal(games.status, 200);
+  const fusion = games.body.find((g: any) => g.title === 'Metroid Fusion');
+  assert.ok(fusion, JSON.stringify(games.body));
+  assert.deepEqual(
+    fusion.roms.map((r: any) => [r.fileName, r.multiFile, r.localPath, r.queued]),
+    [[ROM, false, null, false]],
+  );
+
+  // Covers were fetched with the server's metadata keys; devices just read the cached file.
+  const coverDir = srv.services.ctx.coverDir;
+  fs.mkdirSync(coverDir, { recursive: true });
+  fs.writeFileSync(path.join(coverDir, 'test-cover.jpg'), 'jpeg bytes');
+  const cover = await srv.app.inject({ method: 'GET', url: '/api/covers/test-cover.jpg', headers: handheld.headers });
+  assert.equal(cover.statusCode, 200);
+  assert.equal(cover.body, 'jpeg bytes');
+  assert.equal((await srv.app.inject({ method: 'GET', url: '/api/covers/test-cover.jpg' })).statusCode, 401);
+});

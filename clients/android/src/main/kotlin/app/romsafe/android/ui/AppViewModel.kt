@@ -7,15 +7,17 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.romsafe.android.RomSafeApp
+import app.romsafe.android.data.EmulatorSetup
 import app.romsafe.android.data.Folders
 import app.romsafe.android.data.Lan
-import app.romsafe.android.data.LocalMapping
 import app.romsafe.android.data.Pairing
+import app.romsafe.android.data.PlatformSetup
 import app.romsafe.shared.api.DeviceConfig
 import app.romsafe.shared.api.Mapping
 import app.romsafe.shared.api.PlatformInfo
 import app.romsafe.shared.api.RomSafeApi
 import app.romsafe.shared.api.RomSafeApiException
+import app.romsafe.shared.api.SaveLayout
 import app.romsafe.shared.api.ServerUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -47,18 +49,21 @@ data class AppState(
     val config: DeviceConfig? = null,
     val loading: Boolean = false,
     val loadError: String? = null,
-    val mappings: Map<String, LocalMapping> = emptyMap(),
+    val setups: Map<String, PlatformSetup> = emptyMap(),
     /** Folder URI → readable label. */
     val folderLabels: Map<String, String> = emptyMap(),
     /** Folder URIs we still hold a read/write grant for. */
     val granted: Set<String> = emptySet(),
+    /** "platform/slot" → what's wrong with that emulator's save folder layout. */
+    val layoutProblems: Map<String, String> = emptyMap(),
     val saveStatus: SaveStatus = SaveStatus.Idle,
 ) {
-    /** The profile in use for [p]: the chosen one, or the first that supports it. */
-    fun profileFor(p: PlatformInfo): String? =
-        mappings[p.slug]?.profile?.takeIf { it in p.profiles } ?: p.profiles.firstOrNull()
+    /** The platform's emulators, or one unconfigured placeholder so the card has something to edit. */
+    fun emulators(p: PlatformInfo): List<EmulatorSetup> =
+        setups[p.slug]?.emulators?.takeIf { it.isNotEmpty() }
+            ?: listOfNotNull(p.profiles.firstOrNull()?.let { EmulatorSetup("", it) })
 
-    fun isSetUp(p: PlatformInfo): Boolean = mappings[p.slug]?.saveUri?.let { it in granted } == true
+    fun isSetUp(p: PlatformInfo): Boolean = setups[p.slug]?.emulators.orEmpty().any { it.saveUri in granted }
 }
 
 class AppViewModel(private val app: RomSafeApp) : ViewModel() {
@@ -101,7 +106,7 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
                 val result = RomSafeApi(base, null).use { it.pair(code.trim().uppercase(), name, "android") }
                 val pairing = Pairing(base, result.deviceId, name, result.token)
                 store.savePairing(pairing)
-                _state.update { AppState(pairing = pairing, lastServerUrl = base, mappings = store.mappings()) }
+                _state.update { AppState(pairing = pairing, lastServerUrl = base, setups = store.setups()) }
                 refresh()
             } catch (e: CancellationException) {
                 throw e
@@ -113,14 +118,14 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
 
     fun unpair() {
         val ctx = app.applicationContext
-        _state.value.mappings.values.flatMap { listOfNotNull(it.saveUri, it.romUri) }.forEach { Folders.release(ctx, Uri.parse(it)) }
+        _state.value.setups.values.flatMap { it.uris() }.forEach { Folders.release(ctx, Uri.parse(it)) }
         store.clearPairing()
         api?.close()
         api = null
         _state.value = AppState(lastServerUrl = store.lastServerUrl)
     }
 
-    // --- config and mappings ----------------------------------------------------
+    // --- config and folder setup -------------------------------------------------
 
     fun refresh() {
         _state.update { it.copy(loading = true, loadError = null) }
@@ -128,17 +133,17 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
             try {
                 val config = api().config()
                 val ctx = app.applicationContext
-                val (mappings, granted, labels) = withContext(Dispatchers.IO) {
+                val (setups, granted, labels) = withContext(Dispatchers.IO) {
                     val granted = Folders.grantedUris(ctx)
-                    val mappings = mergeServerMappings(store.mappings(), config, granted)
-                    val labels = mappings.values.flatMap { listOfNotNull(it.saveUri, it.romUri) }
-                        .associateWith { Folders.label(ctx, Uri.parse(it)) }
-                    Triple(mappings, granted, labels)
+                    val setups = mergeServerMappings(store.setups(), config, granted)
+                    val labels = setups.values.flatMap { it.uris() }.associateWith { Folders.label(ctx, Uri.parse(it)) }
+                    Triple(setups, granted, labels)
                 }
-                store.saveMappings(mappings)
+                store.saveSetups(setups)
                 _state.update {
-                    it.copy(config = config, loading = false, mappings = mappings, granted = granted, folderLabels = labels)
+                    it.copy(config = config, loading = false, setups = setups, granted = granted, folderLabels = labels)
                 }
+                checkLayouts()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RomSafeApiException) {
@@ -155,28 +160,30 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
     }
 
     /**
-     * Local mappings win: they hold the folder grants. A server mapping is only
-     * adopted when we have nothing for that platform but still hold a grant for
-     * its folder (e.g. the app's prefs were cleared but Android kept the grant).
+     * Local setup wins: it holds the folder grants. Server mappings are only
+     * adopted for a platform we have nothing for, and only for folders we still
+     * hold a grant to (e.g. the app's prefs were cleared but Android kept them).
      */
     private fun mergeServerMappings(
-        local: Map<String, LocalMapping>,
+        local: Map<String, PlatformSetup>,
         config: DeviceConfig,
         granted: Set<String>,
-    ): Map<String, LocalMapping> {
+    ): Map<String, PlatformSetup> {
         val merged = local.toMutableMap()
-        for (m in config.mappings) {
-            if (m.platform in merged || m.saveRoot !in granted) continue
-            merged[m.platform] = LocalMapping(m.profile, m.saveRoot, m.romRoot?.takeIf { it in granted })
+        for ((platform, mappings) in config.mappings.groupBy { it.platform }) {
+            if (platform in merged) continue
+            val emulators = mappings.filter { it.saveRoot in granted }.map { EmulatorSetup(it.slot, it.profile, it.saveRoot) }
+            if (emulators.isEmpty()) continue
+            merged[platform] = PlatformSetup(mappings.firstNotNullOfOrNull { it.romRoot?.takeIf { r -> r in granted } }, emulators)
         }
         return merged
     }
 
-    fun selectProfile(platform: PlatformInfo, profile: String) {
-        updateMapping(platform) { it.copy(profile = profile) }
+    fun selectProfile(platform: PlatformInfo, slot: String, profile: String) {
+        updateEmulator(platform, slot) { it.copy(profile = profile) }
     }
 
-    fun setFolder(platform: PlatformInfo, kind: FolderKind, uri: Uri) {
+    fun setFolder(platform: PlatformInfo, kind: FolderKind, slot: String, uri: Uri) {
         val ctx = app.applicationContext
         runCatching { Folders.keep(ctx, uri) }.onFailure {
             _state.update { s -> s.copy(saveStatus = SaveStatus.Failed("Android didn't grant access to that folder. Try another one.")) }
@@ -188,50 +195,102 @@ class AppViewModel(private val app: RomSafeApp) : ViewModel() {
             val label = withContext(Dispatchers.IO) { Folders.label(ctx, uri) }
             _state.update { it.copy(folderLabels = it.folderLabels + (key to label)) }
         }
-        updateMapping(platform) { if (kind == FolderKind.Save) it.copy(saveUri = key) else it.copy(romUri = key) }
+        when (kind) {
+            FolderKind.Save -> updateEmulator(platform, slot) { it.copy(saveUri = key) }
+            FolderKind.Rom -> updateSetup(platform) { it.copy(romUri = key) }
+        }
     }
 
-    fun clearFolder(platform: PlatformInfo, kind: FolderKind) {
-        updateMapping(platform) { if (kind == FolderKind.Save) it.copy(saveUri = null) else it.copy(romUri = null) }
+    fun clearFolder(platform: PlatformInfo, kind: FolderKind, slot: String) {
+        when (kind) {
+            FolderKind.Save -> updateEmulator(platform, slot) { it.copy(saveUri = null) }
+            FolderKind.Rom -> updateSetup(platform) { it.copy(romUri = null) }
+        }
     }
 
-    private fun updateMapping(platform: PlatformInfo, change: (LocalMapping) -> LocalMapping) {
-        val s = _state.value
-        val profile = s.profileFor(platform) ?: return
-        val before = s.mappings
-        val current = before[platform.slug] ?: LocalMapping(profile)
-        val next = change(current)
-        val mappings = if (next.saveUri == null && next.romUri == null && next.profile == platform.profiles.firstOrNull()) {
+    /** Another emulator for the same platform, e.g. Citra MMJ next to Azahar. */
+    fun addEmulator(platform: PlatformInfo) {
+        val profile = platform.profiles.firstOrNull() ?: return
+        updateSetup(platform) { setup ->
+            val used = setup.emulators.map { it.slot }.toSet()
+            val slot = generateSequence(2) { it + 1 }.map { it.toString() }.first { it !in used }
+            setup.copy(emulators = setup.emulators + EmulatorSetup(slot, profile))
+        }
+    }
+
+    fun removeEmulator(platform: PlatformInfo, slot: String) {
+        updateSetup(platform) { setup -> setup.copy(emulators = setup.emulators.filter { it.slot != slot }) }
+    }
+
+    private fun updateEmulator(platform: PlatformInfo, slot: String, change: (EmulatorSetup) -> EmulatorSetup) {
+        val placeholder = _state.value.emulators(platform)
+        updateSetup(platform) { setup ->
+            val emulators = setup.emulators.ifEmpty { placeholder }
+            setup.copy(emulators = emulators.map { if (it.slot == slot) change(it) else it })
+        }
+    }
+
+    private fun updateSetup(platform: PlatformInfo, change: (PlatformSetup) -> PlatformSetup) {
+        val before = _state.value.setups
+        val next = change(before[platform.slug] ?: PlatformSetup())
+        val setups = if (next.uris().isEmpty() && next.emulators.size <= 1 && next.emulators.all { it.profile == platform.profiles.firstOrNull() }) {
             before - platform.slug
         } else {
             before + (platform.slug to next)
         }
-        releaseUnused(before, mappings)
-        store.saveMappings(mappings)
-        _state.update { it.copy(mappings = mappings) }
+        releaseUnused(before, setups)
+        store.saveSetups(setups)
+        _state.update { it.copy(setups = setups) }
+        checkLayouts()
         pushMappings()
     }
 
     /** Give back folder grants nothing uses any more; Android caps how many an app may hold. */
-    private fun releaseUnused(before: Map<String, LocalMapping>, after: Map<String, LocalMapping>) {
-        fun uris(m: Map<String, LocalMapping>) = m.values.flatMap { listOfNotNull(it.saveUri, it.romUri) }.toSet()
+    private fun releaseUnused(before: Map<String, PlatformSetup>, after: Map<String, PlatformSetup>) {
+        fun uris(m: Map<String, PlatformSetup>) = m.values.flatMap { it.uris() }.toSet()
         val dropped = uris(before) - uris(after)
         if (dropped.isEmpty()) return
         dropped.forEach { Folders.release(app.applicationContext, Uri.parse(it)) }
         _state.update { it.copy(granted = it.granted - dropped) }
     }
 
-    /** PUT replaces the whole list, so send every platform that has a save folder. Debounced. */
+    /** Look inside each save folder for the folders its profile expects. */
+    private fun checkLayouts() {
+        val s = _state.value
+        val config = s.config ?: return
+        val profiles = config.profiles.associateBy { it.id }
+        val ctx = app.applicationContext
+        viewModelScope.launch {
+            val problems = withContext(Dispatchers.IO) {
+                buildMap {
+                    for (p in config.platforms) {
+                        for (e in s.setups[p.slug]?.emulators.orEmpty()) {
+                            val uri = e.saveUri?.takeIf { it in s.granted } ?: continue
+                            val profile = profiles[e.profile] ?: continue
+                            Folders.layoutProblem(ctx, Uri.parse(uri), SaveLayout.topFolders(profile, p))
+                                ?.let { put("${p.slug}/${e.slot}", it) }
+                        }
+                    }
+                }
+            }
+            _state.update { it.copy(layoutProblems = problems) }
+        }
+    }
+
+    /** PUT replaces the whole list, so send every emulator that has a save folder. Debounced. */
     private fun pushMappings() {
         pushJob?.cancel()
         pushJob = viewModelScope.launch {
             delay(400)
             val s = _state.value
             val config = s.config ?: return@launch
-            val body = config.platforms.mapNotNull { p ->
-                val m = s.mappings[p.slug] ?: return@mapNotNull null
-                val save = m.saveUri ?: return@mapNotNull null
-                Mapping(p.slug, s.profileFor(p) ?: return@mapNotNull null, save, m.romUri)
+            val body = config.platforms.flatMap { p ->
+                val setup = s.setups[p.slug] ?: return@flatMap emptyList()
+                setup.emulators.mapNotNull { e ->
+                    val save = e.saveUri ?: return@mapNotNull null
+                    if (e.profile !in p.profiles) return@mapNotNull null
+                    Mapping(platform = p.slug, profile = e.profile, slot = e.slot, saveRoot = save, romRoot = setup.romUri)
+                }
             }
             _state.update { it.copy(saveStatus = SaveStatus.Saving) }
             try {

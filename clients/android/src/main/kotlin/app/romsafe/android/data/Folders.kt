@@ -34,6 +34,25 @@ object Folders {
     fun initialUri(relativePath: String?): Uri? =
         relativePath?.let { DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE, "primary:$it") }
 
+    /**
+     * Checks that [uri] directly contains one of [topFolders] (e.g. "Nintendo 3DS"),
+     * which catches a folder picked one level off. Returns what's wrong, or null.
+     * Blocking: lists the folder.
+     */
+    fun layoutProblem(context: Context, uri: Uri, topFolders: Set<String>): String? {
+        if (topFolders.isEmpty()) return null
+        val dir = DocumentFile.fromTreeUri(context, uri) ?: return null
+        val expected = topFolders.map { it.lowercase() }
+        val names = runCatching { dir.listFiles().mapNotNull { it.name?.lowercase() } }.getOrNull() ?: return null
+        if (names.any { it in expected }) return null
+        val wanted = topFolders.joinToString(" or ") { "\"$it\"" }
+        return if (dir.name?.lowercase() in expected) {
+            "This is the $wanted folder itself. Pick the folder that contains it."
+        } else {
+            "There's no $wanted folder in here. Pick the folder that contains it."
+        }
+    }
+
     fun grantedUris(context: Context): Set<String> =
         context.contentResolver.persistedUriPermissions
             .filter { it.isReadPermission && it.isWritePermission }

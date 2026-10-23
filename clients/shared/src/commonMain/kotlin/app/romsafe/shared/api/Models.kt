@@ -50,6 +50,8 @@ data class Profile(
 data class Mapping(
     val platform: String,
     val profile: String,
+    /** Which of this device's emulators for the platform; "" is the first. Each slot syncs separately. */
+    val slot: String = "",
     /** Informational only: shown in the web GUI. The device keeps its own folder handles. */
     val saveRoot: String? = null,
     val romRoot: String? = null,
@@ -113,7 +115,7 @@ data class QueueRequest(val romIds: List<Long>)
 data class LocalSave(val path: String, val sha256: String, val size: Long)
 
 @Serializable
-data class PlanRequest(val platform: String, val files: List<LocalSave>)
+data class PlanRequest(val platform: String, val files: List<LocalSave>, val slot: String = "")
 
 /**
  * One step of a save plan. Kept flat rather than sealed so a client keeps working
@@ -154,7 +156,7 @@ data class UploadResponse(
 )
 
 @Serializable
-data class AckRequest(val saveId: Long, val versionId: Long)
+data class AckRequest(val saveId: Long, val versionId: Long, val slot: String = "")
 
 @Serializable
 internal data class ErrorBody(val error: String? = null)

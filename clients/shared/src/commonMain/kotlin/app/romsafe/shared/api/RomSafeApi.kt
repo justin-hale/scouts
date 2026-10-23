@@ -90,18 +90,26 @@ class RomSafeApi(
         client.delete("api/device/roms/queue/$romId").ok<Unit>()
     }
 
-    suspend fun plan(platform: String, files: List<LocalSave>): List<SyncAction> =
+    suspend fun plan(platform: String, files: List<LocalSave>, slot: String = ""): List<SyncAction> =
         client.post("api/device/saves/plan") {
             contentType(ContentType.Application.Json)
-            setBody(PlanRequest(platform, files))
+            setBody(PlanRequest(platform, files, slot))
         }.ok<PlanResponse>().actions
 
-    suspend fun upload(platform: String, path: String, bytes: ByteArray, base: Long?, conflict: Boolean = false): UploadResponse =
+    suspend fun upload(
+        platform: String,
+        path: String,
+        bytes: ByteArray,
+        base: Long?,
+        conflict: Boolean = false,
+        slot: String = "",
+    ): UploadResponse =
         client.put("api/device/saves/upload") {
             parameter("platform", platform)
             parameter("path", path)
             base?.let { parameter("base", it) }
             if (conflict) parameter("conflict", 1)
+            if (slot.isNotEmpty()) parameter("slot", slot)
             contentType(ContentType.Application.OctetStream)
             setBody(bytes)
         }.ok()
@@ -112,10 +120,10 @@ class RomSafeApi(
         return SaveDownload(res.bodyAsBytes(), res.headers["X-Save-Sha256"])
     }
 
-    suspend fun ack(saveId: Long, versionId: Long) {
+    suspend fun ack(saveId: Long, versionId: Long, slot: String = "") {
         client.post("api/device/saves/ack") {
             contentType(ContentType.Application.Json)
-            setBody(AckRequest(saveId, versionId))
+            setBody(AckRequest(saveId, versionId, slot))
         }.ok<Unit>()
     }
 

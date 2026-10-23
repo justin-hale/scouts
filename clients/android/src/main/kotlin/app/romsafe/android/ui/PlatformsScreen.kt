@@ -75,7 +75,7 @@ import app.romsafe.shared.api.PlatformInfo
 import app.romsafe.shared.api.Profile
 import app.romsafe.shared.api.ServerUrl
 
-private data class PickTarget(val slug: String, val kind: FolderKind)
+private data class PickTarget(val slug: String, val kind: FolderKind, val slot: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,9 +83,11 @@ fun PlatformsScreen(
     state: AppState,
     onRefresh: () -> Unit,
     onUnpair: () -> Unit,
-    onProfile: (PlatformInfo, String) -> Unit,
-    onFolder: (PlatformInfo, FolderKind, Uri) -> Unit,
-    onClearFolder: (PlatformInfo, FolderKind) -> Unit,
+    onProfile: (PlatformInfo, slot: String, profile: String) -> Unit,
+    onFolder: (PlatformInfo, FolderKind, slot: String, Uri) -> Unit,
+    onClearFolder: (PlatformInfo, FolderKind, slot: String) -> Unit,
+    onAddEmulator: (PlatformInfo) -> Unit,
+    onRemoveEmulator: (PlatformInfo, slot: String) -> Unit,
     onRetrySave: () -> Unit,
 ) {
     val config = state.config
@@ -99,10 +101,10 @@ fun PlatformsScreen(
         val target = pickTarget
         pickTarget = null
         val platform = config?.platforms?.find { it.slug == target?.slug }
-        if (uri != null && target != null && platform != null) onFolder(platform, target.kind, uri)
+        if (uri != null && target != null && platform != null) onFolder(platform, target.kind, target.slot, uri)
     }
-    val pick = { p: PlatformInfo, kind: FolderKind, hint: String? ->
-        pickTarget = PickTarget(p.slug, kind)
+    val pick = { p: PlatformInfo, kind: FolderKind, slot: String, hint: String? ->
+        pickTarget = PickTarget(p.slug, kind, slot)
         picker.launch(hint?.let(app.romsafe.android.data.Folders::initialUri))
     }
 
@@ -187,9 +189,11 @@ fun PlatformsScreen(
                                 profiles = profiles,
                                 expanded = p.slug in expanded,
                                 onToggle = { expanded = if (p.slug in expanded) expanded - p.slug else expanded + p.slug },
-                                onProfile = { onProfile(p, it) },
-                                onPick = { kind, hint -> pick(p, kind, hint) },
-                                onClear = { onClearFolder(p, it) },
+                                onProfile = { slot, profile -> onProfile(p, slot, profile) },
+                                onPick = { kind, slot, hint -> pick(p, kind, slot, hint) },
+                                onClear = { kind, slot -> onClearFolder(p, kind, slot) },
+                                onAddEmulator = { onAddEmulator(p) },
+                                onRemoveEmulator = { onRemoveEmulator(p, it) },
                             )
                         }
                     }
@@ -238,173 +242,10 @@ private fun LoadError(message: String, onRetry: () -> Unit) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PlatformCard(
-    platform: PlatformInfo,
-    state: AppState,
-    profiles: Map<String, Profile>,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    onProfile: (String) -> Unit,
-    onPick: (FolderKind, String?) -> Unit,
-    onClear: (FolderKind) -> Unit,
-) {
-    val mapping = state.mappings[platform.slug]
-    val profileId = state.profileFor(platform)
-    val profile = profileId?.let(profiles::get)
-    val saveUri = mapping?.saveUri
-    val accessLost = saveUri != null && saveUri !in state.granted
-    val setUp = state.isSetUp(platform)
-    val hint = profile?.defaultPaths?.android?.firstOrNull()
-    val arrow by animateFloatAsState(if (expanded) 180f else 0f, label = "arrow")
-
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Stone.s900),
-        border = BorderStroke(1.dp, if (expanded) Stone.s700 else Stone.s800),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(platform.name, style = MaterialTheme.typography.titleMedium, color = Stone.s100)
-                val summary = when {
-                    platform.profiles.isEmpty() -> "No emulator profile yet"
-                    accessLost -> "Folder access lost. Choose the folder again."
-                    saveUri != null -> "${profile?.name ?: profileId} · ${state.folderLabels[saveUri] ?: "Folder chosen"}"
-                    else -> "Not set up"
-                }
-                Text(
-                    summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (accessLost) Warning else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            when {
-                accessLost -> Icon(Icons.Filled.Warning, contentDescription = "Needs attention", tint = Warning, modifier = Modifier.size(20.dp))
-                setUp -> Icon(painterResource(R.drawable.ic_check_circle), contentDescription = "Set up", tint = Brand.b500, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Stone.s500, modifier = Modifier.rotate(arrow))
-        }
-
-        AnimatedVisibility(expanded) {
-            Column(
-                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (platform.profiles.isEmpty()) {
-                    Text(
-                        "No emulator profile supports this platform yet, so its saves can't sync from this device.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    return@Column
-                }
-                SectionLabel("Emulator")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    platform.profiles.forEach { id ->
-                        FilterChip(
-                            selected = id == profileId,
-                            onClick = { onProfile(id) },
-                            label = { Text(profiles[id]?.name ?: id) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Brand.b900,
-                                selectedLabelColor = Brand.b100,
-                            ),
-                        )
-                    }
-                }
-                profile?.description?.let {
-                    Text(it.trim(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                FolderRow(
-                    icon = R.drawable.ic_save,
-                    title = "Save folder",
-                    value = saveUri?.let { state.folderLabels[it] ?: "Folder chosen" },
-                    hint = hint?.let { "Usually Internal storage/$it" },
-                    warning = accessLost,
-                    onPick = { onPick(FolderKind.Save, hint) },
-                    onClear = { onClear(FolderKind.Save) },
-                )
-                FolderRow(
-                    icon = R.drawable.ic_gamepad,
-                    title = "ROM folder",
-                    value = mapping?.romUri?.let { state.folderLabels[it] ?: "Folder chosen" },
-                    hint = "Optional. Used to match ROMs and for downloads from the library.",
-                    warning = mapping?.romUri?.let { it !in state.granted } == true,
-                    onPick = { onPick(FolderKind.Rom, null) },
-                    onClear = { onClear(FolderKind.Rom) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = Stone.s500, fontWeight = FontWeight.SemiBold)
-}
-
-@Composable
-private fun FolderRow(
-    icon: Int,
-    title: String,
-    value: String?,
-    hint: String?,
-    warning: Boolean,
-    onPick: () -> Unit,
-    onClear: () -> Unit,
-) {
-    Surface(
-        onClick = onPick,
-        shape = RoundedCornerShape(10.dp),
-        color = Stone.s950,
-        border = BorderStroke(1.dp, if (warning) Warning.copy(alpha = 0.6f) else Stone.s800),
-    ) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).padding(0.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(shape = RoundedCornerShape(8.dp), color = if (value != null) Brand.b950 else Stone.s800, modifier = Modifier.fillMaxSize()) {}
-                Icon(painterResource(icon), contentDescription = null, tint = if (value != null) Brand.b400 else Stone.s400, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = Stone.s200)
-                Text(
-                    when {
-                        warning -> "Access lost. Tap to choose it again."
-                        value != null -> value
-                        else -> "Tap to choose a folder"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = when {
-                        warning -> Warning
-                        value != null -> Stone.s300
-                        else -> Stone.s500
-                    },
-                )
-                if (value == null && hint != null) {
-                    Text(hint, style = MaterialTheme.typography.bodySmall, color = Stone.s500)
-                }
-            }
-            if (value != null) {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear $title", tint = Stone.s500)
-                }
-            } else {
-                TextButton(onClick = onPick) { Text("Choose") }
-            }
-        }
-    }
-}
 
 private val PickTargetSaver = androidx.compose.runtime.saveable.Saver<PickTarget?, String>(
-    save = { it?.let { t -> "${t.kind.name}:${t.slug}" } ?: "" },
-    restore = { s -> if (s.isEmpty()) null else PickTarget(s.substringAfter(':'), FolderKind.valueOf(s.substringBefore(':'))) },
+    save = { it?.let { t -> listOf(t.kind.name, t.slot, t.slug).joinToString("|") } ?: "" },
+    restore = { s ->
+        s.split('|').takeIf { it.size == 3 }?.let { (kind, slot, slug) -> PickTarget(slug, FolderKind.valueOf(kind), slot) }
+    },
 )

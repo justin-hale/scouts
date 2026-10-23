@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
                             onProfile = vm::selectProfile,
                             onFolder = vm::setFolder,
                             onClearFolder = vm::clearFolder,
+                            onAddEmulator = vm::addEmulator,
+                            onRemoveEmulator = vm::removeEmulator,
                             onRetrySave = vm::retrySave,
                         )
                     }

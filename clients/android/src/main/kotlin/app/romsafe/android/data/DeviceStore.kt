@@ -7,11 +7,25 @@ import kotlinx.serialization.Serializable
 
 data class Pairing(val serverUrl: String, val deviceId: Long, val deviceName: String, val token: String)
 
-/** What this device uses for one platform. Folder URIs are SAF tree URIs we hold a persisted grant for. */
+/**
+ * One emulator this device uses for a platform. [slot] tells the server which
+ * one it is when several share a platform ("" for the first); folder URIs are
+ * SAF tree URIs we hold a persisted grant for.
+ */
 @Serializable
-data class LocalMapping(val profile: String, val saveUri: String? = null, val romUri: String? = null)
+data class EmulatorSetup(val slot: String, val profile: String, val saveUri: String? = null)
 
-/** Small key-value state that has to survive restarts: the pairing and the folder mappings. */
+/** A platform's ROM folder and the emulators whose saves sync. */
+@Serializable
+data class PlatformSetup(val romUri: String? = null, val emulators: List<EmulatorSetup> = emptyList()) {
+    fun uris(): List<String> = listOfNotNull(romUri) + emulators.mapNotNull { it.saveUri }
+}
+
+/** The single-emulator format the first build stored; read once and converted. */
+@Serializable
+private data class LegacyMapping(val profile: String, val saveUri: String? = null, val romUri: String? = null)
+
+/** Small key-value state that has to survive restarts: the pairing and the folder setup. */
 class DeviceStore(context: Context) {
     private val prefs = context.getSharedPreferences("romsafe", Context.MODE_PRIVATE)
     private val json = RomSafeApi.json
@@ -40,16 +54,23 @@ class DeviceStore(context: Context) {
         remove(KEY_DEVICE_ID)
         remove(KEY_DEVICE_NAME)
         remove(KEY_TOKEN)
-        remove(KEY_MAPPINGS)
+        remove(KEY_SETUPS)
+        remove(KEY_LEGACY_MAPPINGS)
     }
 
-    fun mappings(): Map<String, LocalMapping> =
-        prefs.getString(KEY_MAPPINGS, null)
-            ?.let { runCatching { json.decodeFromString<Map<String, LocalMapping>>(it) }.getOrNull() }
+    fun setups(): Map<String, PlatformSetup> {
+        prefs.getString(KEY_SETUPS, null)?.let { stored ->
+            return runCatching { json.decodeFromString<Map<String, PlatformSetup>>(stored) }.getOrNull().orEmpty()
+        }
+        val legacy = prefs.getString(KEY_LEGACY_MAPPINGS, null)
+            ?.let { runCatching { json.decodeFromString<Map<String, LegacyMapping>>(it) }.getOrNull() }
             .orEmpty()
+        return legacy.mapValues { (_, m) -> PlatformSetup(m.romUri, listOf(EmulatorSetup("", m.profile, m.saveUri))) }
+    }
 
-    fun saveMappings(mappings: Map<String, LocalMapping>) = prefs.edit {
-        putString(KEY_MAPPINGS, json.encodeToString(mappings))
+    fun saveSetups(setups: Map<String, PlatformSetup>) = prefs.edit {
+        putString(KEY_SETUPS, json.encodeToString(setups))
+        remove(KEY_LEGACY_MAPPINGS)
     }
 
     private companion object {
@@ -58,6 +79,7 @@ class DeviceStore(context: Context) {
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_DEVICE_NAME = "device_name"
         const val KEY_TOKEN = "device_token"
-        const val KEY_MAPPINGS = "mappings"
+        const val KEY_SETUPS = "platform_setups"
+        const val KEY_LEGACY_MAPPINGS = "mappings"
     }
 }

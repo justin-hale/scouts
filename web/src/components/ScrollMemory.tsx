@@ -27,24 +27,36 @@ export function ScrollMemory({ className, children }: { className?: string; chil
   // never recorded against the page we just left.
   const currentKey = useRef(location.key);
 
-  // Record the position as you scroll, keyed by history entry.
+  // Record the position, keyed by history entry: as you scroll, and again just before
+  // anything that may navigate (a click, browser back/forward), while the old page is
+  // still on screen. Scroll events alone can miss the last bit when frames are throttled.
   useEffect(() => {
     const el = ref.current!;
     let t: ReturnType<typeof setTimeout> | undefined;
-    const onScroll = () => {
+    const save = () => {
+      try {
+        sessionStorage.setItem(STORE, JSON.stringify(positions.current));
+      } catch {
+        // only remembered in memory
+      }
+    };
+    const record = () => {
       positions.current[currentKey.current] = el.scrollTop;
       clearTimeout(t);
-      t = setTimeout(() => {
-        try {
-          sessionStorage.setItem(STORE, JSON.stringify(positions.current));
-        } catch {
-          // only remembered in memory
-        }
-      }, 200);
+      t = setTimeout(save, 200);
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
+    const recordNow = () => {
+      positions.current[currentKey.current] = el.scrollTop;
+      save();
+    };
+    el.addEventListener('scroll', record, { passive: true });
+    // Capture phase on window runs before React's own handlers navigate.
+    window.addEventListener('click', recordNow, true);
+    window.addEventListener('popstate', recordNow, true);
     return () => {
-      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('scroll', record);
+      window.removeEventListener('click', recordNow, true);
+      window.removeEventListener('popstate', recordNow, true);
       clearTimeout(t);
     };
   }, []);

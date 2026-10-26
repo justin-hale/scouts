@@ -28,8 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.romsafe.android.sync.SyncReport
-import app.romsafe.android.sync.SyncStatus
+import app.romsafe.shared.sync.SyncReport
+import app.romsafe.shared.sync.SyncStatus
 import app.romsafe.android.ui.theme.Brand
 import app.romsafe.android.ui.theme.Stone
 import app.romsafe.android.ui.theme.Warning

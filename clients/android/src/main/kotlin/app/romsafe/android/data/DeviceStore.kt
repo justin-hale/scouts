@@ -2,34 +2,27 @@ package app.romsafe.android.data
 
 import android.content.Context
 import androidx.core.content.edit
-import app.romsafe.android.sync.SyncReport
 import app.romsafe.shared.api.GameSort
 import app.romsafe.shared.api.PlatformSort
 import app.romsafe.shared.api.RomSafeApi
+import app.romsafe.shared.library.LibraryPrefs
+import app.romsafe.shared.setup.EmulatorSetup
+import app.romsafe.shared.setup.PlatformSetup
+import app.romsafe.shared.sync.SyncReport
 import kotlinx.serialization.Serializable
 
 data class Pairing(val serverUrl: String, val deviceId: Long, val deviceName: String, val token: String)
-
-/**
- * One emulator this device uses for a platform. [slot] tells the server which
- * one it is when several share a platform ("" for the first); folder URIs are
- * SAF tree URIs we hold a persisted grant for.
- */
-@Serializable
-data class EmulatorSetup(val slot: String, val profile: String, val saveUri: String? = null)
-
-/** A platform's ROM folder and the emulators whose saves sync. */
-@Serializable
-data class PlatformSetup(val romUri: String? = null, val emulators: List<EmulatorSetup> = emptyList()) {
-    fun uris(): List<String> = listOfNotNull(romUri) + emulators.mapNotNull { it.saveUri }
-}
 
 /** The single-emulator format the first build stored; read once and converted. */
 @Serializable
 private data class LegacyMapping(val profile: String, val saveUri: String? = null, val romUri: String? = null)
 
-/** Small key-value state that has to survive restarts: the pairing and the folder setup. */
-class DeviceStore(context: Context) {
+/**
+ * Small key-value state that has to survive restarts: the pairing and the
+ * folder setup. Folder locations in [PlatformSetup] are SAF tree URIs we hold
+ * a persisted grant for.
+ */
+class DeviceStore(context: Context) : LibraryPrefs {
     private val prefs = context.getSharedPreferences("romsafe", Context.MODE_PRIVATE)
     private val json = RomSafeApi.json
 
@@ -39,11 +32,11 @@ class DeviceStore(context: Context) {
         set(value) = prefs.edit { putString(KEY_LAST_URL, value) }
 
     /** The library's sort choices; they outlive re-pairing like other view settings. */
-    var librarySort: GameSort
+    override var librarySort: GameSort
         get() = GameSort.fromWire(prefs.getString(KEY_LIBRARY_SORT, null))
         set(value) = prefs.edit { putString(KEY_LIBRARY_SORT, value.wire) }
 
-    var libraryPlatformSort: PlatformSort
+    override var libraryPlatformSort: PlatformSort
         get() = PlatformSort.fromWire(prefs.getString(KEY_LIBRARY_PLATFORM_SORT, null))
         set(value) = prefs.edit { putString(KEY_LIBRARY_PLATFORM_SORT, value.wire) }
 

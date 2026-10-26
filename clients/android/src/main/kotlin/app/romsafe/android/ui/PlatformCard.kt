@@ -46,7 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.romsafe.android.R
-import app.romsafe.android.data.EmulatorSetup
+import app.romsafe.shared.setup.EmulatorSetup
 import app.romsafe.android.ui.theme.Brand
 import app.romsafe.android.ui.theme.Stone
 import app.romsafe.android.ui.theme.Warning

@@ -61,7 +61,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.romsafe.android.R
-import app.romsafe.android.sync.Downloads
+import app.romsafe.shared.library.GameStatus
+import app.romsafe.shared.library.LibraryState
+import app.romsafe.shared.library.PlatformGroup
+import app.romsafe.shared.library.statusOf
+import app.romsafe.shared.sync.DownloadItem
 import app.romsafe.android.ui.theme.Brand
 import app.romsafe.android.ui.theme.Stone
 import app.romsafe.android.ui.theme.Warning
@@ -70,30 +74,12 @@ import app.romsafe.shared.api.LibraryGame
 import app.romsafe.shared.api.LibraryRom
 import app.romsafe.shared.api.PlatformSort
 
-/** What a game looks like from this device. */
-sealed interface GameStatus {
-    data object OnDevice : GameStatus
-    data class Downloading(val item: Downloads.Item) : GameStatus
-    data object Queued : GameStatus
-    data class Failed(val message: String) : GameStatus
-    data object Available : GameStatus
-}
-
-fun statusOf(roms: List<LibraryRom>, downloads: Map<Long, Downloads.Item>): GameStatus {
-    roms.firstNotNullOfOrNull { downloads[it.id] }?.let { return if (it.error != null) GameStatus.Failed(it.error) else GameStatus.Downloading(it) }
-    return when {
-        roms.any { it.localPath != null } -> GameStatus.OnDevice
-        roms.any { it.queued } -> GameStatus.Queued
-        else -> GameStatus.Available
-    }
-}
-
 @Composable
 fun LibraryScreen(
     state: LibraryState,
     /** Platforms with a ROM folder on this device: downloads need one. */
     romFolders: Set<String>,
-    downloads: Map<Long, Downloads.Item>,
+    downloads: Map<Long, DownloadItem>,
     art: ArtSource,
     gridState: LazyGridState,
     onFilter: (String?) -> Unit,

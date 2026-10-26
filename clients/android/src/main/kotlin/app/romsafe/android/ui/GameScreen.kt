@@ -50,7 +50,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.romsafe.android.R
-import app.romsafe.android.sync.Downloads
+import app.romsafe.shared.library.GamePage
+import app.romsafe.shared.sync.DownloadItem
 import app.romsafe.android.ui.theme.Brand
 import app.romsafe.android.ui.theme.Stone
 import app.romsafe.android.ui.theme.Warning
@@ -73,7 +74,7 @@ fun GameScreen(
     libraryRoms: List<LibraryRom>,
     platformName: String,
     canDownload: Boolean,
-    downloads: Map<Long, Downloads.Item>,
+    downloads: Map<Long, DownloadItem>,
     art: ArtSource,
     onBack: () -> Unit,
     onRetry: () -> Unit,
@@ -94,9 +95,10 @@ fun GameScreen(
         }
         if (g == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (page.error != null) {
+                val error = page.error
+                if (error != null) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(page.error, color = MaterialTheme.colorScheme.error)
+                        Text(error, color = MaterialTheme.colorScheme.error)
                         TextButton(onClick = onRetry) { Text("Try again") }
                     }
                 } else {
@@ -321,7 +323,7 @@ private fun ServerPath(path: String) {
 private fun RomRow(
     rom: GameRom,
     live: LibraryRom?,
-    downloads: Map<Long, Downloads.Item>,
+    downloads: Map<Long, DownloadItem>,
     canDownload: Boolean,
     onDownload: (LibraryRom) -> Unit,
     onCancel: (LibraryRom) -> Unit,

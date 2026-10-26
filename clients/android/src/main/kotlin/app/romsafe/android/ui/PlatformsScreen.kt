@@ -81,7 +81,7 @@ private data class PickTarget(val slug: String, val kind: FolderKind, val slot: 
 @Composable
 fun PlatformsScreen(
     state: AppState,
-    sync: app.romsafe.android.sync.SyncStatus,
+    sync: app.romsafe.shared.sync.SyncStatus,
     onSyncNow: () -> Unit,
     onRefresh: () -> Unit,
     onUnpair: () -> Unit,

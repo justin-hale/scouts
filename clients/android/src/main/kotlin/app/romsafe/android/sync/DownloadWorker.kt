@@ -21,44 +21,14 @@ import app.romsafe.android.RomSafeApp
 import app.romsafe.android.data.Folders
 import app.romsafe.android.data.SafFileTree
 import app.romsafe.shared.api.RomSafeApi
+import app.romsafe.shared.sync.DownloadQueue
+import app.romsafe.shared.sync.DownloadState
 import app.romsafe.shared.sync.HashCache
-import app.romsafe.shared.sync.RomDownloader
-import app.romsafe.shared.sync.SyncEngine
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
+import app.romsafe.shared.sync.QueueOutcome
 import java.io.File
-import java.io.IOException
 
 /** Live download state for the Library screen (same process as the worker). */
-object Downloads {
-    data class Item(val romId: Long, val name: String, val done: Long = 0, val total: Long = 0, val error: String? = null)
-
-    private val _items = MutableStateFlow<Map<Long, Item>>(emptyMap())
-    val items: StateFlow<Map<Long, Item>> = _items
-
-    /** Bumped after each finished download, so the library reloads. */
-    private val _finished = MutableStateFlow(0)
-    val finished: StateFlow<Int> = _finished
-
-    internal fun update(item: Item) = _items.update { it + (item.romId to item) }
-
-    internal fun done(romId: Long) {
-        _items.update { it - romId }
-        _finished.update { it + 1 }
-    }
-
-    fun clearError(romId: Long) = _items.update { m -> if (m[romId]?.error != null) m - romId else m }
-
-    /** Marks the queued ROMs the library knows about as failed, so they don't sit at "Waiting" forever. */
-    internal fun failAll(message: String) {
-        pendingIds.forEach { id -> update(Item(id, _items.value[id]?.name ?: "", error = message)) }
-    }
-
-    /** ROMs queued from this app since it started; failAll reports on these. */
-    internal val pendingIds = mutableSetOf<Long>()
-
+object Downloads : DownloadState() {
     /** Works through the server's download queue; a later call runs after the current one. */
     fun start(context: Context) {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -84,71 +54,27 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         // Android may refuse a foreground service when started from the background; download anyway.
         runCatching { setForeground(foregroundInfo("Preparing downloads", 0, 0)) }
 
-        RomSafeApi(pairing.serverUrl, pairing.token).use { api ->
-            val config = try {
-                api.config()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                return Result.retry()
-            } catch (e: Exception) {
-                Downloads.failAll(e.message ?: e.javaClass.simpleName)
-                return Result.failure()
-            }
-            val setups = app.store.setups()
+        val outcome = RomSafeApi(pairing.serverUrl, pairing.token).use { api ->
             val granted = Folders.grantedUris(app)
-            val platforms = config.platforms.associateBy { it.slug }
             val cacheFile = File(app.filesDir, "hash-cache.json")
             val cache = HashCache({ cacheFile.takeIf { it.exists() }?.readText() }, { cacheFile.writeText(it) })
-            val skipped = mutableSetOf<Long>()
-
-            while (!isStopped) {
-                val rom = try {
-                    api.queue().firstOrNull { it.id !in skipped }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: IOException) {
-                    return Result.retry()
-                } catch (e: Exception) {
-                    Downloads.failAll("Couldn't read the download queue: ${e.message ?: e.javaClass.simpleName}")
-                    return Result.failure()
-                } ?: break
-                val platform = platforms[rom.platform]
-                val romUri = setups[rom.platform]?.romUri?.takeIf { it in granted }
-                if (platform == null || romUri == null) {
-                    val name = platform?.name ?: rom.platform
-                    Downloads.update(Downloads.Item(rom.id, rom.fileName, error = "Choose a ROM folder for $name first"))
-                    skipped += rom.id
-                    continue
-                }
-                Downloads.update(Downloads.Item(rom.id, rom.fileName))
-                var lastNotified = 0L
-                try {
-                    RomDownloader(api).download(rom, SafFileTree(app, Uri.parse(romUri))) { done, total ->
-                        Downloads.update(Downloads.Item(rom.id, rom.fileName, done, total))
-                        val now = System.currentTimeMillis()
-                        if (now - lastNotified > 1_000) {
-                            lastNotified = now
-                            notifications.notify(NOTIFICATION_ID, notification(rom.fileName, done, total))
-                        }
-                    }
-                    // Report the new ROM so the server matches it (and saves follow), then make sure it's off the queue.
-                    runCatching { SyncEngine(api, cache, System::currentTimeMillis).reportRoms(platform, SafFileTree(app, Uri.parse(romUri)), romUri) }
-                    runCatching { api.dequeue(rom.id) }
-                    Downloads.done(rom.id)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: IOException) {
-                    // Network trouble: try again later; the part file lets it resume.
-                    Downloads.update(Downloads.Item(rom.id, rom.fileName, error = "Interrupted; will resume"))
-                    return Result.retry()
-                } catch (e: Exception) {
-                    Downloads.update(Downloads.Item(rom.id, rom.fileName, error = e.message ?: e.javaClass.simpleName))
-                    skipped += rom.id
+            val queue = DownloadQueue(api, Downloads, cache, System::currentTimeMillis) { uri ->
+                uri.takeIf { it in granted }?.let { SafFileTree(app, Uri.parse(it)) }
+            }
+            var lastNotified = 0L
+            queue.drain(app.store.setups(), isStopped = { isStopped }) { item ->
+                val now = System.currentTimeMillis()
+                if (now - lastNotified > 1_000) {
+                    lastNotified = now
+                    notifications.notify(NOTIFICATION_ID, notification(item.name, item.done, item.total))
                 }
             }
         }
-        return Result.success()
+        return when (outcome) {
+            QueueOutcome.Done -> Result.success()
+            QueueOutcome.Retry -> Result.retry()
+            QueueOutcome.Failed -> Result.failure()
+        }
     }
 
     private fun foregroundInfo(name: String, done: Long, total: Long): ForegroundInfo {

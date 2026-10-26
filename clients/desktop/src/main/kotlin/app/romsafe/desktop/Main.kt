@@ -29,6 +29,7 @@ import app.romsafe.desktop.ui.Home
 import app.romsafe.desktop.ui.ImageLoaderSetup
 import app.romsafe.desktop.ui.PairScreen
 import app.romsafe.desktop.ui.RomSafeTheme
+import app.romsafe.desktop.ui.TitleBar
 import app.romsafe.desktop.ui.logoPainter
 import app.romsafe.desktop.ui.syncLine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,6 +101,7 @@ fun main(args: Array<String>) {
             },
         ) {
             window.minimumSize = java.awt.Dimension(900, 600)
+            LaunchedEffect(Unit) { TitleBar.darken(window) }
             LaunchedEffect(showRequests) {
                 if (showRequests > 0) {
                     window.isMinimized = false

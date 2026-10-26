@@ -71,7 +71,8 @@ data class AppState(
 
 class AppViewModel(private val app: RomSafeApp) : ViewModel() {
     private val store = app.store
-    private val _state = MutableStateFlow(AppState(pairing = store.pairing(), lastServerUrl = store.lastServerUrl))
+    // Setups are known before the server answers, so the app can open on the library.
+    private val _state = MutableStateFlow(AppState(pairing = store.pairing(), lastServerUrl = store.lastServerUrl, setups = store.setups()))
     val state: StateFlow<AppState> = _state
 
     private var api: RomSafeApi? = null

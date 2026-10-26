@@ -12,6 +12,7 @@ import {
   Icon,
 } from './components/icons';
 import { Logo } from './components/Logo';
+import { ScrollMemory } from './components/ScrollMemory';
 import Conflicts from './pages/Conflicts';
 import DevicePage from './pages/Device';
 import Devices from './pages/Devices';
@@ -92,7 +93,7 @@ export default function App() {
           Sign out
         </button>
       </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+      <ScrollMemory className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
         <Routes>
           <Route path="/" element={<Navigate to="/library" replace />} />
           <Route path="/library" element={<Library />} />
@@ -105,7 +106,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/library" replace />} />
         </Routes>
-      </main>
+      </ScrollMemory>
     </div>
   );
 }

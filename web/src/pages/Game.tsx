@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { coverUrl, del, get, patch, post, type Candidate, type GameDetail } from '../api';
 import { CoverPicker } from '../components/CoverPicker';
 import { ExportSaves } from '../components/ExportSaves';
@@ -19,6 +19,7 @@ export default function Game() {
   const [deletingGame, setDeletingGame] = useState(false);
   const [deleteSaves, setDeleteSaves] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,9 +42,13 @@ export default function Game() {
 
   return (
     <>
-      <Link to={`/library?platform=${g.platform}`} className="mb-4 inline-flex items-center gap-1.5 text-sm text-stone-400 hover:text-stone-200">
-        <Icon icon={faArrowLeft} /> Library
-      </Link>
+      {/* Back in history when we came from inside the app, so the list comes back where you left it. */}
+      <button
+        onClick={() => (location.key !== 'default' ? navigate(-1) : navigate(`/library?platform=${g.platform}`))}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-stone-400 hover:text-stone-200"
+      >
+        <Icon icon={faArrowLeft} /> Back
+      </button>
       <ErrorNote error={error} />
       <div className="flex flex-col gap-6 md:flex-row">
         <div className="w-48 shrink-0">

@@ -38,6 +38,8 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,24 +100,28 @@ private fun Home(state: AppState, vm: AppViewModel) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val librarySides = if (wide) WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom else WindowInsetsSides.Top
 
+    // Each tab keeps its saveable state (scroll positions above all) while the other is shown.
+    val tabStates = rememberSaveableStateHolder()
     val content: @Composable () -> Unit = {
-        when (tab) {
-            Tab.Library -> LibraryTab(state, Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(librarySides))) {
-                tab = Tab.Platforms
+        tabStates.SaveableStateProvider(tab.name) {
+            when (tab) {
+                Tab.Library -> LibraryTab(state, Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(librarySides))) {
+                    tab = Tab.Platforms
+                }
+                Tab.Platforms -> PlatformsScreen(
+                    state = state,
+                    sync = sync,
+                    onSyncNow = vm::syncNow,
+                    onRefresh = vm::refresh,
+                    onUnpair = vm::unpair,
+                    onProfile = vm::selectProfile,
+                    onFolder = vm::setFolder,
+                    onClearFolder = vm::clearFolder,
+                    onAddEmulator = vm::addEmulator,
+                    onRemoveEmulator = vm::removeEmulator,
+                    onRetrySave = vm::retrySave,
+                )
             }
-            Tab.Platforms -> PlatformsScreen(
-                state = state,
-                sync = sync,
-                onSyncNow = vm::syncNow,
-                onRefresh = vm::refresh,
-                onUnpair = vm::unpair,
-                onProfile = vm::selectProfile,
-                onFolder = vm::setFolder,
-                onClearFolder = vm::clearFolder,
-                onAddEmulator = vm::addEmulator,
-                onRemoveEmulator = vm::removeEmulator,
-                onRetrySave = vm::retrySave,
-            )
         }
     }
     val libraryIcon = painterResource(R.drawable.ic_library)
@@ -163,12 +169,18 @@ private fun LibraryTab(state: AppState, modifier: Modifier, onSetUpFolders: () -
     val downloads by Downloads.items.collectAsStateWithLifecycle()
     // Kept here so coming back from a game page lands where you were.
     val grid = rememberLazyGridState()
+    // The order and filter the grid last showed; saved with the tab, so coming back isn't a change.
+    var shown by rememberSaveable { mutableStateOf<String?>(null) }
     val pairing = state.pairing ?: return
     // Coming back to the tab picks up what changed on the server meanwhile.
     LaunchedEffect(Unit) { library.load(quiet = true) }
     // A new order or platform filter starts from the top; otherwise the grid would stay
     // anchored to whichever game was first on screen.
-    LaunchedEffect(libState.loadedOrder, libState.filter) { if (libState.page == null) grid.scrollToItem(0) }
+    val order = "${libState.loadedOrder}|${libState.filter}"
+    LaunchedEffect(order) {
+        if (shown != null && shown != order) grid.scrollToItem(0)
+        shown = order
+    }
 
     val context = LocalContext.current
     // Ask once for notifications, so download progress shows outside the app.
@@ -188,20 +200,23 @@ private fun LibraryTab(state: AppState, modifier: Modifier, onSetUpFolders: () -
         val page = libState.page
         if (page != null) {
             val platform = page.detail?.platform ?: libState.games.find { it.id == page.id }?.platform
-            GameScreen(
-                page = page,
-                libraryRoms = libState.games.find { it.id == page.id }?.roms.orEmpty(),
-                platformName = libState.platforms.find { it.slug == platform }?.name ?: platform.orEmpty(),
-                canDownload = platform in romFolders,
-                downloads = downloads,
-                art = art,
-                onBack = library::closeGame,
-                onRetry = { library.loadGame(page.id) },
-                onToggleHistory = library::toggleHistory,
-                onDownload = download,
-                onCancel = library::cancel,
-                onSetUpFolders = onSetUpFolders,
-            )
+            // A fresh page (and scroll position) per game.
+            key(page.id) {
+                GameScreen(
+                    page = page,
+                    libraryRoms = libState.games.find { it.id == page.id }?.roms.orEmpty(),
+                    platformName = libState.platforms.find { it.slug == platform }?.name ?: platform.orEmpty(),
+                    canDownload = platform in romFolders,
+                    downloads = downloads,
+                    art = art,
+                    onBack = library::closeGame,
+                    onRetry = { library.loadGame(page.id) },
+                    onToggleHistory = library::toggleHistory,
+                    onDownload = download,
+                    onCancel = library::cancel,
+                    onSetUpFolders = onSetUpFolders,
+                )
+            }
         } else {
             LibraryScreen(
                 state = libState,

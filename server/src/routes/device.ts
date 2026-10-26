@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { Services } from '../app.js';
 import { requireDevice } from '../auth.js';
 import { now } from '../db.js';
+import { gameOrderBy, parseGameSort, parsePlatformSort, sortPlatforms, type GameSort, type PlatformSort } from '../library/order.js';
 import { profileSupports } from '../profiles/profiles.js';
 import { isSafeRelative, normalizePath } from '../profiles/template.js';
 import { updateInventory, type InventoryFile } from '../roms/matching.js';
@@ -113,18 +114,21 @@ export const deviceRoutes =
       );
 
       /**
-       * The server library for one platform, a game per entry with its ROMs, for
-       * browsing and downloading on the device. `cover` is a file under /api/covers/.
+       * Library games with their ROMs and this device's download state, for browsing and
+       * downloading on the device. `platform` and `q` narrow it; `sort` and `platformSort`
+       * order it (see library/order.ts). Only games with a ROM on the server are listed.
        */
-      dev.get<{ Querystring: { platform: string } }>('/games', async (req) => {
-        const deviceId = req.device!.id;
-        const platform = req.query.platform;
-        const games = db.all<{ id: number; title: string; releaseDate: string | null; cover: string | null }>(
-          `SELECT g.id, g.title, g.release_date AS releaseDate, g.cover_file AS cover
-           FROM games g WHERE g.platform = $p
-             AND EXISTS (SELECT 1 FROM roms r WHERE r.game_id = g.id AND r.missing = 0)
-           ORDER BY g.title COLLATE NOCASE`,
-          { $p: platform },
+      const libraryGames = (deviceId: number, opts: { platform?: string; q?: string; sort: GameSort; platformSort: PlatformSort }) => {
+        const where = ['EXISTS (SELECT 1 FROM roms r WHERE r.game_id = g.id AND r.missing = 0)'];
+        const params: Record<string, string | number> = {};
+        if (opts.platform) (where.push('g.platform = $p'), (params.$p = opts.platform));
+        if (opts.q?.trim()) (where.push('g.title LIKE $q'), (params.$q = `%${opts.q.trim()}%`));
+        const games = db.all<{ id: number }>(
+          `SELECT g.id, g.platform, g.title, g.release_date AS releaseDate, g.cover_file AS cover, g.created_at AS addedAt,
+             (SELECT count(*) FROM saves s WHERE s.game_id = g.id AND s.current_version_id IS NOT NULL) AS saveCount
+           FROM games g WHERE ${where.join(' AND ')}
+           ORDER BY ${gameOrderBy(opts.sort, opts.platformSort)}`,
+          params,
         );
         const roms = db.all<{
           id: number;
@@ -141,9 +145,9 @@ export const deviceRoutes =
              r.total_size AS totalSize, r.parts,
              (SELECT dr.local_path FROM device_roms dr WHERE dr.device_id = $d AND dr.rom_id = r.id LIMIT 1) AS localPath,
              EXISTS (SELECT 1 FROM device_rom_queue q WHERE q.device_id = $d AND q.rom_id = r.id) AS queued
-           FROM roms r WHERE r.platform = $p AND r.missing = 0 AND r.game_id IS NOT NULL
+           FROM roms r WHERE r.missing = 0 AND r.game_id IS NOT NULL AND ($p IS NULL OR r.platform = $p)
            ORDER BY r.file_name COLLATE NOCASE`,
-          { $d: deviceId, $p: platform },
+          { $d: deviceId, $p: opts.platform ?? null },
         );
         const byGame = new Map<number, unknown[]>();
         for (const r of roms) {
@@ -161,6 +165,38 @@ export const deviceRoutes =
           byGame.set(r.gameId, list);
         }
         return games.map((g) => ({ ...g, roms: byGame.get(g.id) ?? [] }));
+      };
+
+      /** One platform's games (the first library endpoint; kept for older clients). */
+      dev.get<{ Querystring: { platform: string; sort?: string } }>('/games', async (req) =>
+        libraryGames(req.device!.id, { platform: req.query.platform, sort: parseGameSort(req.query.sort), platformSort: 'name' }),
+      );
+
+      /**
+       * The whole library, grouped by platform: the platforms that have games (in the
+       * requested order, with counts that ignore the filters) and the games in group order.
+       */
+      dev.get<{ Querystring: { platform?: string; q?: string; sort?: string; platformSort?: string } }>('/library', async (req) => {
+        const sort = parseGameSort(req.query.sort);
+        const platformSort = parsePlatformSort(req.query.platformSort);
+        const counts = new Map(
+          db
+            .all<{ platform: string; n: number }>(
+              `SELECT g.platform, count(*) AS n FROM games g
+               WHERE EXISTS (SELECT 1 FROM roms r WHERE r.game_id = g.id AND r.missing = 0) GROUP BY g.platform`,
+            )
+            .map((r) => [r.platform, r.n]),
+        );
+        const platforms = sortPlatforms(
+          ctx
+            .platforms()
+            .filter((p) => counts.has(p.def.slug))
+            .map((p) => ({ slug: p.def.slug, name: p.def.name, games: counts.get(p.def.slug)! })),
+          platformSort,
+          (p) => p.games,
+        );
+        const games = libraryGames(req.device!.id, { platform: req.query.platform || undefined, q: req.query.q, sort, platformSort });
+        return { platforms, games };
       });
 
       dev.get('/roms/queue', async (req) =>

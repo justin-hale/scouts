@@ -5,7 +5,7 @@ import type { Services } from '../app.js';
 import { requireAdmin, requireAdminOrDevice } from '../auth.js';
 import { now } from '../db.js';
 import type { Candidate } from '../metadata/providers.js';
-import { PLATFORMS } from '../platforms.js';
+import { gameOrderBy, parseGameSort, parsePlatformSort, platformNameRank, sortPlatforms } from '../library/order.js';
 import { profileSupports, validateLayout } from '../profiles/profiles.js';
 import { setManualMatch } from '../roms/matching.js';
 import { LibraryRemover } from '../library/remove.js';
@@ -25,9 +25,6 @@ const int = (v: unknown): number => {
 };
 
 const notFound = (reply: FastifyReply, what = 'Not found') => reply.code(404).send({ error: what });
-
-// Games list by platform in catalog order (the order of the GUI's platform chips), then by title.
-const PLATFORM_ORDER = `CASE g.platform ${PLATFORMS.map((p, i) => `WHEN '${p.slug}' THEN ${i}`).join(' ')} ELSE ${PLATFORMS.length} END`;
 
 export const adminRoutes =
   ({ ctx, sync, scanner, metadata }: Services): FastifyPluginAsync =>
@@ -54,6 +51,139 @@ export const adminRoutes =
         if (!/^[\w-]+\.(jpg|png|webp)$/.test(req.params.file)) return notFound(reply);
         return reply.sendFile(req.params.file, ctx.coverDir, { maxAge: '30d', immutable: true });
       });
+
+      // --- library browsing (read-only, so paired devices can show what the GUI shows) ---
+
+      shared.get<{ Querystring: { sort?: string } }>('/platforms', async (req) => {
+        const counts = (sql: string) => new Map(db.all<{ platform: string; n: number }>(sql).map((r) => [r.platform, r.n]));
+        const games = counts('SELECT platform, count(*) AS n FROM games GROUP BY platform');
+        const roms = counts('SELECT platform, count(*) AS n FROM roms WHERE missing = 0 GROUP BY platform');
+        const saves = counts('SELECT platform, count(*) AS n FROM saves WHERE current_version_id IS NOT NULL GROUP BY platform');
+        const extras = counts('SELECT platform, count(*) AS n FROM extras WHERE missing = 0 GROUP BY platform');
+        const list = ctx.platforms().map((p) => ({
+          slug: p.def.slug,
+          name: p.def.name,
+          keyKind: p.def.keyKind,
+          romExtensions: p.def.romExtensions,
+          enabled: p.enabled,
+          romPath: p.romPath,
+          savePath: p.savePath,
+          saveLayout: p.saveLayout,
+          saveLayoutOverride: p.saveLayoutOverride,
+          defaultSaveLayout: p.def.defaultSaveLayout,
+          profiles: ctx.profiles.filter((pr) => profileSupports(pr, p.def)).map((pr) => pr.id),
+          counts: {
+            games: games.get(p.def.slug) ?? 0,
+            roms: roms.get(p.def.slug) ?? 0,
+            saves: saves.get(p.def.slug) ?? 0,
+            extras: extras.get(p.def.slug) ?? 0,
+          },
+        }));
+        return sortPlatforms(list, parsePlatformSort(req.query.sort), (p) => p.counts.games);
+      });
+
+      shared.get<{
+        Querystring: { platform?: string; q?: string; limit?: string; offset?: string; sort?: string; platformSort?: string };
+      }>('/games', async (req) => {
+        const { platform, q } = req.query;
+        const order = gameOrderBy(parseGameSort(req.query.sort), parsePlatformSort(req.query.platformSort));
+        const limit = Math.min(Number(req.query.limit ?? 120), 500);
+        const offset = Number(req.query.offset ?? 0);
+        const where: string[] = ['1=1'];
+        const params: Record<string, string | number> = {};
+        if (platform) (where.push('g.platform = $p'), (params.$p = platform));
+        if (q) (where.push('g.title LIKE $q'), (params.$q = `%${q}%`));
+        const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM games g WHERE ${where.join(' AND ')}`, params)!.n;
+        const items = db.all(
+          `SELECT g.id, g.platform, g.title, g.release_date AS releaseDate, g.cover_file AS cover, g.created_at AS addedAt,
+             (SELECT count(*) FROM roms r WHERE r.game_id = g.id AND r.missing = 0) AS romCount,
+             (SELECT count(*) FROM saves s WHERE s.game_id = g.id AND s.current_version_id IS NOT NULL) AS saveCount
+           FROM games g WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT $limit OFFSET $offset`,
+          { ...params, $limit: limit, $offset: offset },
+        );
+        return { items, total };
+      });
+
+      shared.get<IdParams>('/games/:id', async (req, reply) => {
+        const id = int(req.params.id);
+        const game = db.get(
+          `SELECT id, platform, title, title_id AS titleId, igdb_id AS igdbId, sgdb_id AS sgdbId, summary,
+             release_date AS releaseDate, cover_file AS cover, metadata_source AS metadataSource FROM games WHERE id = $id`,
+          { $id: id },
+        );
+        if (!game) return notFound(reply);
+        // Where files live, as the server sees them (container paths), for the GUI to show on hover.
+        const romRoot = ctx.platform((game as { platform: string }).platform)?.romPath;
+        const onServer = (rel: string) => (romRoot ? path.join(romRoot, rel) : null);
+        // A device also learns whether it has each ROM or has it queued, for its download buttons.
+        const deviceId = req.device?.id ?? null;
+        const roms = db
+          .all<{ relPath: string; size: number; totalSize: number | null; parts: string | null; missing: number; queued: number }>(
+            `SELECT r.id, r.rel_path AS relPath, r.file_name AS fileName, r.size, r.total_size AS totalSize, r.parts,
+               r.crc32, r.md5, r.sha1, r.title_id AS titleId, r.missing,
+               (SELECT dr.local_path FROM device_roms dr WHERE dr.device_id = $d AND dr.rom_id = r.id LIMIT 1) AS localPath,
+               EXISTS (SELECT 1 FROM device_rom_queue q WHERE q.device_id = $d AND q.rom_id = r.id) AS queued
+             FROM roms r WHERE r.game_id = $id ORDER BY r.file_name`,
+            { $id: id, $d: deviceId },
+          )
+          .map(({ queued, ...r }) => ({
+            ...r,
+            missing: !!r.missing,
+            totalSize: r.totalSize ?? r.size,
+            parts: ((r.parts ? JSON.parse(r.parts) : []) as RomPart[]).map((p) => ({ path: p.path, size: p.size, serverPath: onServer(p.path) })),
+            serverPath: onServer(r.relPath),
+            ...(deviceId !== null && { queued: !!queued }),
+          }));
+        const saves = db
+          .all<{ platform: string; gameKey: string; file: string; sha256: string | null }>(
+            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
+               v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
+               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
+             FROM saves s
+             LEFT JOIN save_versions v ON v.id = s.current_version_id
+             LEFT JOIN devices d ON d.id = v.device_id
+             WHERE s.game_id = $id ORDER BY s.file`,
+            { $id: id },
+          )
+          .map(describeSave);
+        const extras = db
+          .all<{ relPath: string; missing: number }>(
+            `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
+             FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
+            { $id: id },
+          )
+          .map((x) => ({ ...x, missing: !!x.missing, serverPath: onServer(x.relPath) }));
+        return { ...game, roms, saves, extras };
+      });
+
+      shared.get<{ Querystring: { platform?: string } }>('/saves', async (req) =>
+        db
+          .all<{ platform: string; gameKey: string; file: string; gameId: number | null; sha256: string }>(
+            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
+               g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
+               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
+             FROM saves s
+             LEFT JOIN games g ON g.id = s.game_id
+             LEFT JOIN save_versions v ON v.id = s.current_version_id
+             LEFT JOIN devices d ON d.id = v.device_id
+             WHERE s.current_version_id IS NOT NULL AND ($p IS NULL OR s.platform = $p)
+             ORDER BY ${platformNameRank('s.platform')}, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
+            { $p: req.query.platform ?? null },
+          )
+          .map((s) => ({ ...describeSave(s), label: s.gameId ? null : saveLabel(s.platform, s.file, sync.store.blobPath(s.sha256)) })),
+      );
+
+      shared.get<IdParams>('/saves/:id/versions', async (req) =>
+        db
+          .all<{ isCurrent: number }>(
+            `SELECT v.id, v.sha256, v.size, v.created_at AS createdAt, v.note, v.parent_version_id AS parentVersionId,
+               d.name AS device, (s.current_version_id = v.id) AS isCurrent
+             FROM save_versions v JOIN saves s ON s.id = v.save_id LEFT JOIN devices d ON d.id = v.device_id
+             WHERE v.save_id = $id ORDER BY v.id DESC`,
+            { $id: int(req.params.id) },
+          )
+          .map((v) => ({ ...v, isCurrent: !!v.isCurrent })),
+      );
 
       shared.get<IdParams>('/roms/:id/download', async (req, reply) => {
         const rom = db.get<{
@@ -125,33 +255,6 @@ export const adminRoutes =
 
       // --- platforms & profiles -------------------------------------------
 
-      admin.get('/platforms', async () => {
-        const counts = (sql: string) => new Map(db.all<{ platform: string; n: number }>(sql).map((r) => [r.platform, r.n]));
-        const games = counts('SELECT platform, count(*) AS n FROM games GROUP BY platform');
-        const roms = counts('SELECT platform, count(*) AS n FROM roms WHERE missing = 0 GROUP BY platform');
-        const saves = counts('SELECT platform, count(*) AS n FROM saves WHERE current_version_id IS NOT NULL GROUP BY platform');
-        const extras = counts('SELECT platform, count(*) AS n FROM extras WHERE missing = 0 GROUP BY platform');
-        return ctx.platforms().map((p) => ({
-          slug: p.def.slug,
-          name: p.def.name,
-          keyKind: p.def.keyKind,
-          romExtensions: p.def.romExtensions,
-          enabled: p.enabled,
-          romPath: p.romPath,
-          savePath: p.savePath,
-          saveLayout: p.saveLayout,
-          saveLayoutOverride: p.saveLayoutOverride,
-          defaultSaveLayout: p.def.defaultSaveLayout,
-          profiles: ctx.profiles.filter((pr) => profileSupports(pr, p.def)).map((pr) => pr.id),
-          counts: {
-            games: games.get(p.def.slug) ?? 0,
-            roms: roms.get(p.def.slug) ?? 0,
-            saves: saves.get(p.def.slug) ?? 0,
-            extras: extras.get(p.def.slug) ?? 0,
-          },
-        }));
-      });
-
       admin.put<{ Params: { slug: string }; Body: { enabled?: boolean; romPath?: string | null; savePath?: string | null; saveLayout?: string | null } }>(
         '/platforms/:slug',
         async (req, reply) => {
@@ -200,71 +303,6 @@ export const adminRoutes =
       });
       admin.get('/metadata/scrape', async () => metadata.scrape);
 
-      admin.get<{ Querystring: { platform?: string; q?: string; limit?: string; offset?: string } }>('/games', async (req) => {
-        const { platform, q } = req.query;
-        const limit = Math.min(Number(req.query.limit ?? 120), 500);
-        const offset = Number(req.query.offset ?? 0);
-        const where: string[] = ['1=1'];
-        const params: Record<string, string | number> = {};
-        if (platform) (where.push('g.platform = $p'), (params.$p = platform));
-        if (q) (where.push('g.title LIKE $q'), (params.$q = `%${q}%`));
-        const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM games g WHERE ${where.join(' AND ')}`, params)!.n;
-        const items = db.all(
-          `SELECT g.id, g.platform, g.title, g.release_date AS releaseDate, g.cover_file AS cover,
-             (SELECT count(*) FROM roms r WHERE r.game_id = g.id AND r.missing = 0) AS romCount,
-             (SELECT count(*) FROM saves s WHERE s.game_id = g.id AND s.current_version_id IS NOT NULL) AS saveCount
-           FROM games g WHERE ${where.join(' AND ')} ORDER BY ${PLATFORM_ORDER}, g.title COLLATE NOCASE LIMIT $limit OFFSET $offset`,
-          { ...params, $limit: limit, $offset: offset },
-        );
-        return { items, total };
-      });
-
-      admin.get<IdParams>('/games/:id', async (req, reply) => {
-        const id = int(req.params.id);
-        const game = db.get(
-          `SELECT id, platform, title, title_id AS titleId, igdb_id AS igdbId, sgdb_id AS sgdbId, summary,
-             release_date AS releaseDate, cover_file AS cover, metadata_source AS metadataSource FROM games WHERE id = $id`,
-          { $id: id },
-        );
-        if (!game) return notFound(reply);
-        // Where files live, as the server sees them (container paths), for the GUI to show on hover.
-        const romRoot = ctx.platform((game as { platform: string }).platform)?.romPath;
-        const onServer = (rel: string) => (romRoot ? path.join(romRoot, rel) : null);
-        const roms = db
-          .all<{ relPath: string; size: number; totalSize: number | null; parts: string | null }>(
-            `SELECT id, rel_path AS relPath, file_name AS fileName, size, total_size AS totalSize, parts,
-               crc32, md5, sha1, title_id AS titleId, missing
-             FROM roms WHERE game_id = $id ORDER BY file_name`,
-            { $id: id },
-          )
-          .map((r) => ({
-            ...r,
-            totalSize: r.totalSize ?? r.size,
-            parts: ((r.parts ? JSON.parse(r.parts) : []) as RomPart[]).map((p) => ({ path: p.path, size: p.size, serverPath: onServer(p.path) })),
-            serverPath: onServer(r.relPath),
-          }));
-        const saves = db
-          .all<{ platform: string; gameKey: string; file: string; sha256: string | null }>(
-            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
-               v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
-               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
-             FROM saves s
-             LEFT JOIN save_versions v ON v.id = s.current_version_id
-             LEFT JOIN devices d ON d.id = v.device_id
-             WHERE s.game_id = $id ORDER BY s.file`,
-            { $id: id },
-          )
-          .map(describeSave);
-        const extras = db
-          .all<{ relPath: string }>(
-            `SELECT id, kind, rel_path AS relPath, file_name AS fileName, size, missing
-             FROM extras WHERE game_id = $id ORDER BY kind, rel_path`,
-            { $id: id },
-          )
-          .map((x) => ({ ...x, serverPath: onServer(x.relPath) }));
-        return { ...game, roms, saves, extras };
-      });
-
       admin.patch<IdParams & { Body: { title?: string; summary?: string | null; titleId?: string | null } }>(
         '/games/:id',
         async (req, reply) => {
@@ -310,23 +348,6 @@ export const adminRoutes =
 
       // --- saves & conflicts ---------------------------------------------------
 
-      admin.get<{ Querystring: { platform?: string } }>('/saves', async (req) =>
-        db
-          .all<{ platform: string; gameKey: string; file: string; gameId: number | null; sha256: string }>(
-            `SELECT s.id, s.platform, s.game_key AS gameKey, s.file, s.current_version_id AS currentVersionId,
-               g.id AS gameId, g.title AS gameTitle, v.sha256, v.size, v.created_at AS updatedAt, d.name AS updatedBy,
-               (SELECT count(*) FROM save_versions x WHERE x.save_id = s.id) AS versionCount
-             FROM saves s
-             LEFT JOIN games g ON g.id = s.game_id
-             LEFT JOIN save_versions v ON v.id = s.current_version_id
-             LEFT JOIN devices d ON d.id = v.device_id
-             WHERE s.current_version_id IS NOT NULL AND ($p IS NULL OR s.platform = $p)
-             ORDER BY s.platform, COALESCE(g.title, s.game_key) COLLATE NOCASE, s.file`,
-            { $p: req.query.platform ?? null },
-          )
-          .map((s) => ({ ...describeSave(s), label: s.gameId ? null : saveLabel(s.platform, s.file, sync.store.blobPath(s.sha256)) })),
-      );
-
       // Current saves as a zip: everything, one platform, or one game; laid out for an emulator profile if given.
       admin.get<{ Querystring: { platform?: string; gameId?: string; profile?: string } }>('/saves/export.zip', async (req, reply) => {
         const { platform, profile: profileId } = req.query;
@@ -353,16 +374,6 @@ export const adminRoutes =
 
       admin.delete<IdParams & { Querystring: { saves?: string } }>('/games/:id', async (req) =>
         remover.deleteGame(int(req.params.id), { saves: req.query.saves === '1' || req.query.saves === 'true' }),
-      );
-
-      admin.get<IdParams>('/saves/:id/versions', async (req) =>
-        db.all(
-          `SELECT v.id, v.sha256, v.size, v.created_at AS createdAt, v.note, v.parent_version_id AS parentVersionId,
-             d.name AS device, (s.current_version_id = v.id) AS isCurrent
-           FROM save_versions v JOIN saves s ON s.id = v.save_id LEFT JOIN devices d ON d.id = v.device_id
-           WHERE v.save_id = $id ORDER BY v.id DESC`,
-          { $id: int(req.params.id) },
-        ),
       );
 
       admin.post<IdParams & { Body: { versionId: number } }>('/saves/:id/restore', async (req, reply) => {

@@ -104,7 +104,7 @@ export interface GameDetail {
     md5: string | null;
     sha1: string | null;
     titleId: string | null;
-    missing: number;
+    missing: boolean;
     /** Size including the parts below. */
     totalSize: number;
     /** Files that go with this ROM: a .cue's tracks, an .m3u's discs, a CloneCD .img's .ccd/.sub. */
@@ -113,7 +113,7 @@ export interface GameDetail {
     serverPath: string | null;
   }[];
   saves: SaveSummary[];
-  extras: { id: number; kind: string; relPath: string; fileName: string; size: number; missing: number; serverPath: string | null }[];
+  extras: { id: number; kind: string; relPath: string; fileName: string; size: number; missing: boolean; serverPath: string | null }[];
 }
 
 export interface SaveSummary {
@@ -149,7 +149,7 @@ export interface SaveVersion {
   createdAt: number;
   note: string | null;
   device: string | null;
-  isCurrent: number;
+  isCurrent: boolean;
 }
 
 export interface Candidate {

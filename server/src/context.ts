@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { Auth } from './auth.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
-import { getPlatform, PLATFORMS, type PlatformDef } from './platforms.js';
+import { getPlatform, PLATFORMS_BY_NAME, type PlatformDef } from './platforms.js';
 import type { Profile } from './profiles/profiles.js';
 
 export interface PlatformConfig {
@@ -50,7 +50,7 @@ export class AppContext {
 
   platforms(): PlatformConfig[] {
     const rows = new Map(this.db.all<PlatformRow>('SELECT * FROM platforms').map((r) => [r.slug, r]));
-    return PLATFORMS.map((def) => toConfig(def, rows.get(def.slug)));
+    return PLATFORMS_BY_NAME.map((def) => toConfig(def, rows.get(def.slug)));
   }
 }
 

@@ -130,6 +130,9 @@ export const PLATFORMS: PlatformDef[] = [
   },
 ];
 
+/** The catalog sorted by name: the default order of every platform list (API, GUI, apps). */
+export const PLATFORMS_BY_NAME: PlatformDef[] = [...PLATFORMS].sort((a, b) => a.name.localeCompare(b.name));
+
 const bySlug = new Map(PLATFORMS.map((p) => [p.slug, p]));
 
 export function getPlatform(slug: string): PlatformDef | undefined {

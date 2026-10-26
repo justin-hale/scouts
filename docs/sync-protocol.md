@@ -78,6 +78,47 @@ ROMs that need companion files (a `.cue` and its `.bin` tracks, an `.m3u` and it
 support. Its entries are stored (uncompressed), with paths relative to the ROM's folder: extract
 them into the folder of `romRoot/relPath`.
 
+## Browsing the library
+
+Devices can show the library the way the web GUI does. These endpoints are **read-only** for
+device tokens; restoring, deleting and editing stay in the web GUI for now.
+
+```http
+GET /api/device/library[?platform=gba][&q=zelda][&sort=title][&platformSort=name]
+→ { "platforms": [ { "slug": "gba", "name": "Game Boy Advance", "games": 41 } ],
+    "games": [ { "id": 7, "platform": "gba", "title": "Metroid Fusion", "releaseDate": "2002-11-17",
+                 "cover": "7-ab12.jpg", "addedAt": 1792771827046, "saveCount": 1,
+                 "roms": [ { "id": 12, "fileName": "…", "relPath": "…", "size": 8388608,
+                             "multiFile": false, "localPath": "Metroid Fusion.gba", "queued": false } ] } ] }
+```
+
+Games come grouped by platform (in `platforms` order) and sorted inside each group. `platforms`
+lists every platform with games, with counts that ignore `platform` and `q`, so clients can draw
+filter chips from it. Only games with a ROM on the server are listed.
+
+- `platformSort`: `name` (default, alphabetical) or `games` (most games first).
+- `sort`: `title` (default, A–Z), `title-desc`, `added` (newest first), `released` (newest
+  first, unknown dates last) or `saved` (most recently changed save first, games without saves last).
+
+Anything else answers 400. `GET /api/device/games?platform=gba[&sort=…]` returns one platform's
+games as a plain list (the original endpoint).
+
+The web GUI's read endpoints also accept device tokens:
+
+```http
+GET /api/platforms[?sort=name|games]      platform settings and counts
+GET /api/games[?platform&q&sort&platformSort&limit&offset]  → { items, total }
+GET /api/games/{id}                       game page: metadata, roms (with parts), saves, extras
+GET /api/saves[?platform=gba]             current saves
+GET /api/saves/{id}/versions              → [ { id, sha256, size, createdAt, note, device, isCurrent } ]
+GET /api/covers/{file}                    cached cover art
+GET /api/extras/{id}/download
+GET /api/save-versions/{id}/download
+```
+
+For a device, each ROM on `GET /api/games/{id}` also carries `localPath` and `queued`. Platform logos
+are public static files at `/platforms/{slug}.svg` (not every platform has one).
+
 ## Saves
 
 Saves sync **before** ROM inventory changes take effect, so send the ROM inventory first. That

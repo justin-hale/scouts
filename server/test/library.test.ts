@@ -104,10 +104,10 @@ test('Game Boy games in the GBC folder are indexed', async () => {
   assert.equal(rows("SELECT id FROM roms WHERE platform = 'gbc'").length, 2);
 });
 
-test('the game list is sorted by platform (catalog order), then title', async () => {
+test('the game list is sorted by platform name, then title', async () => {
   const { body } = await srv.admin('GET', '/api/games');
   const order = body.items.map((g: { platform: string; title: string }) => `${g.platform}:${g.title}`);
-  // GBC comes before PlayStation in the catalog; titles are A-Z within each.
+  // Game Boy Color comes before PlayStation alphabetically; titles are A-Z within each.
   assert.deepEqual(order, ['gbc:Pokemon Crystal', 'gbc:Tetris', 'psx:Final Fantasy 9', 'psx:Game A', 'psx:Loose']);
 });
 

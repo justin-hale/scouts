@@ -36,10 +36,18 @@ Known constraint: on Android 11+ the app cannot read `Android/data/<other app>`.
 can move their data to a user folder (Azahar, Dolphin, RetroArch, PPSSPP, DuckStation,
 NetherSX2). Shizuku support can cover the rest later.
 
-## Windows app (second)
+## Windows app
 
-The same screens on Compose Desktop. It lives in the tray and uses `WatchService` to sync shortly
-after a save changes, instead of polling.
+`desktop/` is the same app on Compose Desktop (it also builds on macOS and Linux). Folders are
+plain paths: the setup card opens the chooser at the profile's `defaultPaths.windows` and offers
+any of those folders that exist. The library, game pages and sync engine come from `shared/`.
+
+- It lives in the tray (status, Sync now, Open, Quit); closing the window keeps it running, and
+  starting it again brings the window back. `--hidden` starts it in the tray.
+- It syncs at start, every 15 minutes, and 8 seconds after a watched save folder changes
+  (`WatchService`, limited to the folders a profile can keep saves in).
+- Settings, the hash cache and cached covers live in `%LOCALAPPDATA%\RomSafe`. The device token is
+  sealed with DPAPI, so only the same Windows user can read it.
 
 ## Building
 
@@ -51,6 +59,7 @@ cd clients
 ./gradlew :shared:allTests            # API client tests (JVM and Android host)
 ./gradlew :android:assembleDebug      # android/build/outputs/apk/debug/android-debug.apk
 adb install -r android/build/outputs/apk/debug/android-debug.apk
+./gradlew :desktop:run                # the Windows app; :desktop:packageMsi builds an installer
 ```
 
 The server usually runs plain HTTP on the LAN. The app allows cleartext only to hosts that resolve

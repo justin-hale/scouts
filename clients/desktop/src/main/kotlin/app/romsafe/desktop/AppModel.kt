@@ -74,7 +74,8 @@ class AppModel(private val store: DesktopStore = DesktopStore()) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     val sync = SyncService(store, scope)
 
-    private val _state = MutableStateFlow(AppState(pairing = store.pairing(), lastServerUrl = store.lastServerUrl))
+    // Setups are known before the server answers, so the app can open on the library.
+    private val _state = MutableStateFlow(AppState(pairing = store.pairing(), lastServerUrl = store.lastServerUrl, setups = store.setups()))
     val state: StateFlow<AppState> = _state
 
     private var client: RomSafeApi? = null

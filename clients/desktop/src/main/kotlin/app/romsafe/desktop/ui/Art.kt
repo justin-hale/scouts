@@ -1,6 +1,7 @@
 package app.romsafe.desktop.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,9 +36,24 @@ import coil3.network.httpHeaders
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import coil3.svg.SvgDecoder
-import okio.Path.Companion.toOkioPath
 import app.romsafe.desktop.data.AppDirs
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.loadSvgPainter
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.java.Java
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import okio.Path.Companion.toOkioPath
+import java.util.concurrent.ConcurrentHashMap
 
 /** Where covers and logos come from: the paired server, with the device's token for covers. */
 data class ArtSource(val serverUrl: String, val authHeader: String?) {
@@ -45,14 +61,13 @@ data class ArtSource(val serverUrl: String, val authHeader: String?) {
     fun logo(slug: String) = "$serverUrl/platforms/$slug.svg"
 }
 
-/** Coil with SVG logos and a disk cache under the app's folder, so covers don't download every launch. */
+/** Coil for covers, with a disk cache under the app's folder, so covers don't download every launch. */
 @Composable
 fun ImageLoaderSetup() {
     setSingletonImageLoaderFactory { context: PlatformContext ->
         ImageLoader.Builder(context)
             .components {
                 add(KtorNetworkFetcherFactory())
-                add(SvgDecoder.Factory())
             }
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.25).build() }
             .diskCache {
@@ -104,10 +119,82 @@ private val WHITE = ColorFilter.colorMatrix(
     ),
 )
 
+/**
+ * Platform logos, fetched once per run. Skia's SVG renderer ignores `<style>`
+ * blocks, so a shape styled `fill:none` by class would paint solid (and the
+ * white filter turns it into a block); the classes are inlined first.
+ */
+private object Logos {
+    private val client = HttpClient(Java)
+    class Logo(val svg: ByteArray, /** Width over height, from the viewBox: not every logo states a size. */ val ratio: Float)
+
+    private val cache = ConcurrentHashMap<String, Deferred<Logo?>>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    suspend fun get(url: String): Logo? = cache.getOrPut(url) {
+        scope.async {
+            runCatching {
+                val res = client.get(url)
+                if (res.status.isSuccess()) res.bodyAsText().let { Logo(withSize(inlineClasses(it)).encodeToByteArray(), ratio(it)) } else null
+            }.getOrNull()
+        }
+    }.await()
+
+    private val viewBox = Regex("""viewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)""")
+
+    private fun ratio(svg: String): Float {
+        val (w, h) = viewBox.find(svg)?.destructured ?: return 4f
+        return (w.toFloat() / h.toFloat()).takeIf { it.isFinite() && it > 0 } ?: 4f
+    }
+
+    private val svgTag = Regex("""<svg\b[^>]*>""")
+
+    /** Skia draws an SVG without a width and height at a tiny default size; give it the viewBox's. */
+    private fun withSize(svg: String): String {
+        val tag = svgTag.find(svg) ?: return svg
+        if (Regex("""\swidth=""").containsMatchIn(tag.value)) return svg
+        val (w, h) = viewBox.find(tag.value)?.destructured ?: return svg
+        return svg.replaceRange(tag.range, tag.value.replaceFirst("<svg", "<svg width=\"$w\" height=\"$h\""))
+    }
+
+    private val styleBlock = Regex("""<style[^>]*>(.*?)</style>""", RegexOption.DOT_MATCHES_ALL)
+    private val rule = Regex("""\.([\w-]+)\s*\{([^}]*)\}""")
+    private val classAttr = Regex("""class="([^"]*)"""")
+
+    fun inlineClasses(svg: String): String {
+        val rules = styleBlock.findAll(svg).flatMap { rule.findAll(it.groupValues[1]) }
+            .associate { it.groupValues[1] to it.groupValues[2].trim().trimEnd(';') }
+        if (rules.isEmpty()) return svg
+        return classAttr.replace(svg) { m ->
+            val decls = m.groupValues[1].split(' ').mapNotNull { rules[it] }.joinToString(";")
+            if (decls.isEmpty()) m.value else "style=\"$decls\""
+        }
+    }
+}
+
 /** A platform's logo from the server's /platforms/<slug>.svg, or its name when there's none. */
 @Composable
 fun PlatformLogo(art: ArtSource, slug: String, name: String, modifier: Modifier = Modifier, scale: Float = 1f) {
+    val density = LocalDensity.current
+    val url = art.logo(slug)
+    val loaded by produceState<Pair<Painter, Float>?>(null, url) {
+        value = Logos.get(url)?.let { l -> runCatching { loadSvgPainter(l.svg.inputStream(), density) to l.ratio }.getOrNull() }
+    }
     var missing by remember(slug) { mutableStateOf(false) }
+    LaunchedEffect(url) { missing = Logos.get(url) == null }
+    val logo = loaded
+    val height = (if (slug in TALL_LOGOS) 26 else 18).dp * scale
+    if (logo != null) {
+        Image(
+            logo.first,
+            contentDescription = name,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            colorFilter = if (slug in COLOUR_LOGOS) null else WHITE,
+            modifier = modifier.height(height).widthIn(max = height * logo.second),
+        )
+        return
+    }
     if (missing) {
         Text(
             name,
@@ -120,15 +207,8 @@ fun PlatformLogo(art: ArtSource, slug: String, name: String, modifier: Modifier 
         )
         return
     }
-    AsyncImage(
-        model = art.logo(slug),
-        contentDescription = name,
-        contentScale = ContentScale.Fit,
-        alignment = Alignment.CenterStart,
-        colorFilter = if (slug in COLOUR_LOGOS) null else WHITE,
-        onError = { missing = true },
-        modifier = modifier.height((if (slug in TALL_LOGOS) 26 else 18).dp * scale),
-    )
+    // Still loading: keep the row's height so the grid doesn't jump.
+    Box(modifier.height((if (slug in TALL_LOGOS) 26 else 18).dp * scale))
 }
 
 /** The Android app's vector icons, shared as XML resources. */

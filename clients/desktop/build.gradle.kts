@@ -25,7 +25,6 @@ dependencies {
     implementation(libs.ktor.client.java)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor3)
-    implementation(libs.coil.svg)
     // DPAPI, to keep the device token encrypted at rest on Windows.
     implementation(libs.jna.platform)
 
@@ -43,7 +42,7 @@ compose.desktop {
             vendor = "RomSafe"
             // MSI versions are MAJOR.MINOR.BUILD with BUILD at most 65535: one build per commit.
             packageVersion = "1.0.${commitCount.get()}"
-            modules("java.net.http", "jdk.unsupported")
+            modules("java.instrument", "java.management", "java.net.http", "jdk.unsupported")
             windows {
                 menu = true
                 shortcut = true

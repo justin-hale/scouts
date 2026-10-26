@@ -74,6 +74,7 @@ export function ScrollMemory({ className, children }: { className?: string; chil
       done = true;
       observer.disconnect();
       clearTimeout(timeout);
+      clearInterval(retry);
       el.removeEventListener('wheel', stop);
       el.removeEventListener('touchstart', stop);
       el.removeEventListener('keydown', stop);
@@ -83,9 +84,11 @@ export function ScrollMemory({ className, children }: { className?: string; chil
       el.scrollTop = target;
       if (Math.abs(el.scrollTop - target) < 2) stop();
     };
+    // Retry as the page grows; the timer covers tabs that aren't rendering frames.
     const observer = new ResizeObserver(tryRestore);
     observer.observe(content.current!);
-    const timeout = setTimeout(stop, 4000);
+    const retry = setInterval(tryRestore, 100);
+    const timeout = setTimeout(stop, 5000);
     el.addEventListener('wheel', stop, { passive: true });
     el.addEventListener('touchstart', stop, { passive: true });
     el.addEventListener('keydown', stop);

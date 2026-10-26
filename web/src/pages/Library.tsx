@@ -7,16 +7,58 @@ import { PlatformLogo } from '../components/PlatformLogo';
 import { Button, ErrorNote, Input, PageHeader, useApi } from '../components/ui';
 import { RomUpload } from '../components/uploads';
 
+// The server does the sorting (see server/src/library/order.ts), so every client offers the same orders.
+const GAME_SORTS = [
+  ['title', 'Title A–Z'],
+  ['title-desc', 'Title Z–A'],
+  ['added', 'Recently added'],
+  ['released', 'Release date'],
+  ['saved', 'Recently saved'],
+] as const;
+const PLATFORM_SORTS = [
+  ['name', 'Platforms A–Z'],
+  ['games', 'Most games first'],
+] as const;
+type GameSort = (typeof GAME_SORTS)[number][0];
+type PlatformSort = (typeof PLATFORM_SORTS)[number][0];
+
+/** A sort choice kept in this browser (it may be unavailable, e.g. in a private window). */
+function useStoredChoice<T extends string>(key: string, allowed: readonly (readonly [T, string])[]) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (allowed.some(([v]) => v === saved)) return saved as T;
+    } catch {
+      // fall through to the default
+    }
+    return allowed[0][0];
+  });
+  const set = (v: T) => {
+    setValue(v);
+    try {
+      localStorage.setItem(key, v);
+    } catch {
+      // only remembered for this visit
+    }
+  };
+  return [value, set] as const;
+}
+
 export default function Library() {
   const [params, setParams] = useSearchParams();
   const platform = params.get('platform') ?? '';
   const [q, setQ] = useState(params.get('q') ?? '');
   const [uploading, setUploading] = useState(false);
+  const [sort, setSort] = useStoredChoice<GameSort>('romsafe.library.sort', GAME_SORTS);
+  const [platformSort, setPlatformSort] = useStoredChoice<PlatformSort>('romsafe.library.platformSort', PLATFORM_SORTS);
 
-  const platforms = useApi(() => get<Platform[]>('/platforms'));
+  const platforms = useApi(() => get<Platform[]>(`/platforms?sort=${platformSort}`), [platformSort]);
   const games = useApi(
-    () => get<{ items: GameSummary[]; total: number }>(`/games?${new URLSearchParams({ ...(platform && { platform }), ...(q && { q }), limit: '500' })}`),
-    [platform, q],
+    () =>
+      get<{ items: GameSummary[]; total: number }>(
+        `/games?${new URLSearchParams({ ...(platform && { platform }), ...(q && { q }), sort, platformSort, limit: '500' })}`,
+      ),
+    [platform, q, sort, platformSort],
   );
   const reload = useCallback(() => {
     void games.reload();
@@ -52,6 +94,10 @@ export default function Library() {
 
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center">
         <Input className="md:max-w-xs" placeholder="Search titles…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex gap-2">
+          <SortSelect label="Sort games" value={sort} options={GAME_SORTS} onChange={setSort} />
+          <SortSelect label="Order platforms" value={platformSort} options={PLATFORM_SORTS} onChange={setPlatformSort} />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           <Chip active={!platform} onClick={() => setPlatform('')}>
             All
@@ -74,7 +120,7 @@ export default function Library() {
         </div>
       )}
 
-      {/* The server sorts by platform, then title; in the All view each platform gets a heading. */}
+      {/* The server groups by platform, then sorts within each; in the All view each platform gets a heading. */}
       {groupByPlatform(games.data?.items ?? []).map(([slug, list]) => (
         <section key={slug} className="mb-10">
           {!platform && (
@@ -137,6 +183,34 @@ function GameTile({ game: g, platformName }: { game: GameSummary; platformName: 
       </div>
       <div className="mt-2 line-clamp-2 text-sm font-medium text-stone-200 group-hover:text-brand-400">{g.title}</div>
     </Link>
+  );
+}
+
+function SortSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <select
+      aria-label={label}
+      title={label}
+      className="rounded-md border border-stone-700 bg-stone-950 px-3 py-1.5 text-sm"
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+    >
+      {options.map(([v, text]) => (
+        <option key={v} value={v}>
+          {text}
+        </option>
+      ))}
+    </select>
   );
 }
 

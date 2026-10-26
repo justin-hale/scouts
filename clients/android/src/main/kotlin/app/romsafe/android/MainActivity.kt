@@ -1,10 +1,15 @@
 package app.romsafe.android
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -30,28 +36,34 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.romsafe.android.sync.Downloads
 import app.romsafe.android.sync.SyncRunner
 import app.romsafe.android.ui.AppState
 import app.romsafe.android.ui.AppViewModel
+import app.romsafe.android.ui.ArtSource
+import app.romsafe.android.ui.GameScreen
 import app.romsafe.android.ui.LibraryScreen
 import app.romsafe.android.ui.LibraryViewModel
 import app.romsafe.android.ui.PairScreen
 import app.romsafe.android.ui.PlatformsScreen
-import app.romsafe.android.ui.theme.Brand
 import app.romsafe.android.ui.theme.RomSafeTheme
 import app.romsafe.android.ui.theme.Stone
+import app.romsafe.shared.api.LibraryRom
 
 private enum class Tab { Library, Platforms }
 
@@ -149,23 +161,57 @@ private fun LibraryTab(state: AppState, modifier: Modifier, onSetUpFolders: () -
     val library: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory)
     val libState by library.state.collectAsStateWithLifecycle()
     val downloads by Downloads.items.collectAsStateWithLifecycle()
+    // Kept here so coming back from a game page lands where you were.
+    val grid = rememberLazyGridState()
     val pairing = state.pairing ?: return
-    val config = state.config
+    // Coming back to the tab picks up what changed on the server meanwhile.
+    LaunchedEffect(Unit) { library.load(quiet = true) }
+
+    val context = LocalContext.current
+    // Ask once for notifications, so download progress shows outside the app.
+    val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val download = { rom: LibraryRom ->
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        library.download(rom)
+    }
+    val romFolders = state.setups.filterValues { it.romUri != null && it.romUri in state.granted }.keys
+    val art = remember(pairing) { ArtSource(pairing.serverUrl, "Bearer ${pairing.token}") }
+
     Box(modifier.fillMaxSize()) {
-        if (config == null) {
-            Text(state.loadError ?: "Loading…", color = Brand.b400, modifier = Modifier.padding(24.dp))
+        val page = libState.page
+        if (page != null) {
+            val platform = page.detail?.platform ?: libState.games.find { it.id == page.id }?.platform
+            GameScreen(
+                page = page,
+                libraryRoms = libState.games.find { it.id == page.id }?.roms.orEmpty(),
+                platformName = libState.platforms.find { it.slug == platform }?.name ?: platform.orEmpty(),
+                canDownload = platform in romFolders,
+                downloads = downloads,
+                art = art,
+                onBack = library::closeGame,
+                onRetry = { library.loadGame(page.id) },
+                onToggleHistory = library::toggleHistory,
+                onDownload = download,
+                onCancel = library::cancel,
+                onSetUpFolders = onSetUpFolders,
+            )
         } else {
             LibraryScreen(
                 state = libState,
-                platforms = config.platforms,
-                romFolders = state.setups.filterValues { it.romUri != null && it.romUri in state.granted }.keys,
+                romFolders = romFolders,
                 downloads = downloads,
-                serverUrl = pairing.serverUrl,
-                authHeader = "Bearer ${pairing.token}",
-                onPlatform = library::select,
+                art = art,
+                gridState = grid,
+                onFilter = library::filter,
                 onSearch = library::search,
-                onDownload = library::download,
-                onCancel = library::cancel,
+                onSort = library::sort,
+                onPlatformSort = library::platformSort,
+                onOpen = { library.openGame(it.id) },
+                onDownload = download,
                 onSetUpFolders = onSetUpFolders,
             )
         }

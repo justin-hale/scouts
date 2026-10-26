@@ -45,6 +45,51 @@ class RomSafeApiTest {
     }
 
     @Test
+    fun asksForTheLibrarySortedAndDecodesGamePages() = runTest {
+        val engine = MockEngine { req ->
+            when (req.url.encodedPath) {
+                "/api/device/library" -> {
+                    assertEquals("released", req.url.parameters["sort"])
+                    assertEquals("games", req.url.parameters["platformSort"])
+                    assertEquals("zelda", req.url.parameters["q"])
+                    respond(
+                        """{"platforms":[{"slug":"gba","name":"Game Boy Advance","games":2}],
+                           "games":[{"id":7,"platform":"gba","title":"Minish Cap","cover":null,"saveCount":2,"addedAt":5,
+                             "roms":[{"id":1,"fileName":"m.gba","relPath":"m.gba","size":9,"multiFile":false,"localPath":null,"queued":false}]}]}""",
+                        headers = jsonHeaders,
+                    )
+                }
+                "/api/games/7" -> respond(
+                    """{"id":7,"platform":"gba","title":"Minish Cap","igdbId":1,"summary":"Link shrinks.","metadataSource":"igdb",
+                       "roms":[{"id":1,"relPath":"m.cue","fileName":"m.cue","size":1,"totalSize":9,"crc32":null,"md5":null,"missing":false,
+                         "parts":[{"path":"m.bin","size":8,"serverPath":"/roms/m.bin"}],"serverPath":"/roms/m.cue","localPath":null,"queued":true}],
+                       "saves":[{"id":3,"platform":"gba","gameKey":"m","file":"m.sav","currentVersionId":4,"sha256":"ab","size":2,
+                         "updatedAt":9,"updatedBy":null,"versionCount":2,"downloadName":"m.sav","empty":true,"serverPath":null}],
+                       "extras":[{"id":5,"kind":"dlc","relPath":"dlc/x.zip","fileName":"x.zip","size":3,"missing":false,"serverPath":null}]}""",
+                    headers = jsonHeaders,
+                )
+                "/api/saves/3/versions" -> respond(
+                    """[{"id":4,"sha256":"ab","size":2,"createdAt":9,"note":null,"parentVersionId":2,"device":"Thor","isCurrent":true}]""",
+                    headers = jsonHeaders,
+                )
+                else -> error("unexpected ${req.url}")
+            }
+        }
+        val api = RomSafeApi("http://nas", "t", engine)
+        val library = api.library(GameSort.RELEASED, PlatformSort.GAMES, query = " zelda ")
+        assertEquals(2, library.games.single().saveCount)
+        assertEquals("Game Boy Advance", library.platforms.single().name)
+        val game = api.game(7)
+        assertEquals(listOf("m.bin"), game.roms.single().parts.map { it.path })
+        assertEquals(true, game.roms.single().queued)
+        assertEquals(true, game.saves.single().empty)
+        assertEquals("dlc", game.extras.single().kind)
+        assertEquals(true, api.saveVersions(3).single().isCurrent)
+        assertEquals(GameSort.SAVED, GameSort.fromWire("saved"))
+        assertEquals(PlatformSort.NAME, PlatformSort.fromWire("bogus"))
+    }
+
+    @Test
     fun keepsUnknownPlanActions() = runTest {
         val engine = MockEngine { req ->
             assertEquals("""{"platform":"gba","files":[{"path":"A.srm","sha256":"ab","size":2}]}""", req.body.toByteArray().decodeToString())

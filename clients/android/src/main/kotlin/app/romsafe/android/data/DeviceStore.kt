@@ -3,6 +3,8 @@ package app.romsafe.android.data
 import android.content.Context
 import androidx.core.content.edit
 import app.romsafe.android.sync.SyncReport
+import app.romsafe.shared.api.GameSort
+import app.romsafe.shared.api.PlatformSort
 import app.romsafe.shared.api.RomSafeApi
 import kotlinx.serialization.Serializable
 
@@ -35,6 +37,15 @@ class DeviceStore(context: Context) {
     var lastServerUrl: String?
         get() = prefs.getString(KEY_LAST_URL, null)
         set(value) = prefs.edit { putString(KEY_LAST_URL, value) }
+
+    /** The library's sort choices; they outlive re-pairing like other view settings. */
+    var librarySort: GameSort
+        get() = GameSort.fromWire(prefs.getString(KEY_LIBRARY_SORT, null))
+        set(value) = prefs.edit { putString(KEY_LIBRARY_SORT, value.wire) }
+
+    var libraryPlatformSort: PlatformSort
+        get() = PlatformSort.fromWire(prefs.getString(KEY_LIBRARY_PLATFORM_SORT, null))
+        set(value) = prefs.edit { putString(KEY_LIBRARY_PLATFORM_SORT, value.wire) }
 
     fun pairing(): Pairing? {
         val url = prefs.getString(KEY_URL, null) ?: return null
@@ -89,5 +100,7 @@ class DeviceStore(context: Context) {
         const val KEY_SETUPS = "platform_setups"
         const val KEY_LEGACY_MAPPINGS = "mappings"
         const val KEY_SYNC_REPORT = "last_sync_report"
+        const val KEY_LIBRARY_SORT = "library_sort"
+        const val KEY_LIBRARY_PLATFORM_SORT = "library_platform_sort"
     }
 }

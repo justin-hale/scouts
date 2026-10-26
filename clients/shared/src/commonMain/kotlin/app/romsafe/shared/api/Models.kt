@@ -110,15 +110,137 @@ data class QueuedRom(
     val url: String,
 )
 
-/** A game in the server library with its ROMs, from GET /api/device/games. */
+/** A game in the server library with its ROMs, from GET /api/device/library (or /games). */
 @Serializable
 data class LibraryGame(
     val id: Long,
     val title: String,
+    val platform: String = "",
     val releaseDate: String? = null,
     /** File name under /api/covers/, cached by the server. */
     val cover: String? = null,
+    /** When the game joined the library (ms). */
+    val addedAt: Long? = null,
+    /** Saves with a current version. */
+    val saveCount: Int = 0,
     val roms: List<LibraryRom> = emptyList(),
+)
+
+/** A platform with games, for the library's headings and filter chips. */
+@Serializable
+data class LibraryPlatform(val slug: String, val name: String, val games: Int)
+
+/** GET /api/device/library: games grouped by platform, in [platforms] order. */
+@Serializable
+data class Library(val platforms: List<LibraryPlatform>, val games: List<LibraryGame>)
+
+/** Game order inside each platform group. The server sorts; [wire] is the `sort` query value. */
+enum class GameSort(val wire: String, val label: String) {
+    TITLE("title", "Title A–Z"),
+    TITLE_DESC("title-desc", "Title Z–A"),
+    ADDED("added", "Recently added"),
+    RELEASED("released", "Release date"),
+    SAVED("saved", "Recently saved"),
+    ;
+
+    companion object {
+        fun fromWire(value: String?) = entries.find { it.wire == value } ?: TITLE
+    }
+}
+
+/** Order of the platform groups; [wire] is the `platformSort` query value. */
+enum class PlatformSort(val wire: String, val label: String) {
+    NAME("name", "Platforms A–Z"),
+    GAMES("games", "Most games first"),
+    ;
+
+    companion object {
+        fun fromWire(value: String?) = entries.find { it.wire == value } ?: NAME
+    }
+}
+
+// --- game pages (GET /api/games/{id}) -------------------------------------------
+
+@Serializable
+data class GameDetail(
+    val id: Long,
+    val platform: String,
+    val title: String,
+    val titleId: String? = null,
+    val summary: String? = null,
+    val releaseDate: String? = null,
+    val cover: String? = null,
+    /** Where the metadata came from (`igdb`, `steamgriddb`, ...), or null when it's only the file name. */
+    val metadataSource: String? = null,
+    val roms: List<GameRom> = emptyList(),
+    val saves: List<GameSave> = emptyList(),
+    val extras: List<GameExtra> = emptyList(),
+)
+
+@Serializable
+data class GameRom(
+    val id: Long,
+    val relPath: String,
+    val fileName: String,
+    val size: Long,
+    /** Size including [parts]. */
+    val totalSize: Long = size,
+    val crc32: String? = null,
+    val sha1: String? = null,
+    val titleId: String? = null,
+    val missing: Boolean = false,
+    /** Files that go with this ROM (a .cue's tracks, an .m3u's discs); it downloads as one zip. */
+    val parts: List<RomPart> = emptyList(),
+    val serverPath: String? = null,
+    /** Where this device has it, or null. */
+    val localPath: String? = null,
+    val queued: Boolean = false,
+)
+
+@Serializable
+data class RomPart(val path: String, val size: Long, val serverPath: String? = null)
+
+@Serializable
+data class GameExtra(
+    val id: Long,
+    /** `dlc`, `mod`, `hack`, `patch`, `firmware`, ... */
+    val kind: String,
+    val relPath: String,
+    val fileName: String,
+    val size: Long,
+    val missing: Boolean = false,
+    val serverPath: String? = null,
+)
+
+@Serializable
+data class GameSave(
+    val id: Long,
+    val gameKey: String,
+    val file: String,
+    val currentVersionId: Long? = null,
+    val sha256: String? = null,
+    val size: Long? = null,
+    val updatedAt: Long? = null,
+    /** Device that made the current version; null for the server (scan or web upload). */
+    val updatedBy: String? = null,
+    val versionCount: Int = 0,
+    /** What the file is called when downloaded. */
+    val downloadName: String,
+    /** The current version holds no game data (never written, or an empty memory card). */
+    val empty: Boolean = false,
+    val serverPath: String? = null,
+)
+
+@Serializable
+data class SaveVersion(
+    val id: Long,
+    val sha256: String,
+    val size: Long,
+    val createdAt: Long,
+    val note: String? = null,
+    /** Device that uploaded it; null for the server. */
+    val device: String? = null,
+    val isCurrent: Boolean = false,
 )
 
 @Serializable

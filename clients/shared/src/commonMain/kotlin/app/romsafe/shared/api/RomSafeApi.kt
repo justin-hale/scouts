@@ -88,8 +88,31 @@ class RomSafeApi(
     suspend fun games(platform: String): List<LibraryGame> =
         client.get("api/device/games") { parameter("platform", platform) }.ok()
 
+    /** The whole library grouped by platform, sorted by the server. */
+    suspend fun library(
+        sort: GameSort = GameSort.TITLE,
+        platformSort: PlatformSort = PlatformSort.NAME,
+        platform: String? = null,
+        query: String? = null,
+    ): Library =
+        client.get("api/device/library") {
+            parameter("sort", sort.wire)
+            parameter("platformSort", platformSort.wire)
+            platform?.let { parameter("platform", it) }
+            query?.takeIf { it.isNotBlank() }?.let { parameter("q", it.trim()) }
+        }.ok()
+
+    /** A game page: metadata, ROM files, extras and saves. */
+    suspend fun game(id: Long): GameDetail = client.get("api/games/$id").ok()
+
+    /** A save's history, newest first. */
+    suspend fun saveVersions(saveId: Long): List<SaveVersion> = client.get("api/saves/$saveId/versions").ok()
+
     /** Absolute URL of a cover the server cached; fetch it with [authHeader]. */
     fun coverUrl(file: String): String = "$baseUrl/api/covers/$file"
+
+    /** A platform's logo (SVG, public). Not every platform has one, so expect a 404. */
+    fun platformLogoUrl(slug: String): String = "$baseUrl/platforms/$slug.svg"
 
     val authHeader: String? get() = token?.let { "Bearer $it" }
 

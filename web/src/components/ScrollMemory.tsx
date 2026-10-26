@@ -27,9 +27,10 @@ export function ScrollMemory({ className, children }: { className?: string; chil
   // never recorded against the page we just left.
   const currentKey = useRef(location.key);
 
-  // Record the position, keyed by history entry: as you scroll, and again just before
-  // anything that may navigate (a click, browser back/forward), while the old page is
-  // still on screen. Scroll events alone can miss the last bit when frames are throttled.
+  // Record the position, keyed by history entry: as you scroll, and again on any click
+  // (it may navigate) while the old page is still on screen, since scroll events can miss
+  // the last bit when frames are throttled. Not on popstate: the router has already
+  // swapped the page by then.
   useEffect(() => {
     const el = ref.current!;
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -52,11 +53,9 @@ export function ScrollMemory({ className, children }: { className?: string; chil
     el.addEventListener('scroll', record, { passive: true });
     // Capture phase on window runs before React's own handlers navigate.
     window.addEventListener('click', recordNow, true);
-    window.addEventListener('popstate', recordNow, true);
     return () => {
       el.removeEventListener('scroll', record);
       window.removeEventListener('click', recordNow, true);
-      window.removeEventListener('popstate', recordNow, true);
       clearTimeout(t);
     };
   }, []);

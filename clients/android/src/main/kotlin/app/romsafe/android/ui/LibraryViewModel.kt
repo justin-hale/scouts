@@ -37,6 +37,8 @@ data class LibraryState(
     val platformSort: PlatformSort = PlatformSort.NAME,
     val loading: Boolean = false,
     val loaded: Boolean = false,
+    /** The order the shown games were loaded in; a change means the list should start from the top. */
+    val loadedOrder: Pair<GameSort, PlatformSort>? = null,
     val error: String? = null,
     /** The game page that's open, if any. */
     val page: GamePage? = null,
@@ -110,7 +112,15 @@ class LibraryViewModel(private val app: RomSafeApp) : ViewModel() {
                 _state.update {
                     // A platform that no longer has games can't stay selected.
                     val filter = it.filter?.takeIf { f -> library.platforms.any { p -> p.slug == f } }
-                    it.copy(platforms = library.platforms, games = library.games, filter = filter, loading = false, loaded = true, error = null)
+                    it.copy(
+                        platforms = library.platforms,
+                        games = library.games,
+                        filter = filter,
+                        loading = false,
+                        loaded = true,
+                        loadedOrder = s.sort to s.platformSort,
+                        error = null,
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e

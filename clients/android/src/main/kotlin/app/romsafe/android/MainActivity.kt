@@ -166,6 +166,9 @@ private fun LibraryTab(state: AppState, modifier: Modifier, onSetUpFolders: () -
     val pairing = state.pairing ?: return
     // Coming back to the tab picks up what changed on the server meanwhile.
     LaunchedEffect(Unit) { library.load(quiet = true) }
+    // A new order or platform filter starts from the top; otherwise the grid would stay
+    // anchored to whichever game was first on screen.
+    LaunchedEffect(libState.loadedOrder, libState.filter) { if (libState.page == null) grid.scrollToItem(0) }
 
     val context = LocalContext.current
     // Ask once for notifications, so download progress shows outside the app.
